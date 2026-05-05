@@ -20,9 +20,20 @@ and runs on any Linux Docker host.
 sudo apt install docker.io docker-compose-v2
 
 # in this directory
+cp .env.example .env
+# edit .env and fill in STEAM_USER / STEAM_PASSWORD (account that owns Arma 3)
 docker compose up -d --build
 docker compose logs -f
 ```
+
+> **Steam credentials are required.** Anonymous SteamCMD login is rejected by
+> Steam for app 233780 (`Failed to install app '233780' (No subscription)`).
+> Use an account that owns Arma 3. The credentials are read from `.env`
+> (gitignored) and consumed only inside the container.
+>
+> If your account has Steam Guard, you'll need to authorize the login once —
+> `docker compose run --rm arma3 steamcmd +login $STEAM_USER` interactively
+> on the host, accept the email/2FA code, then bring the stack up normally.
 
 First boot pulls ~15 GB of Arma 3 data into the named volume `arma3-data`. After
 that, restarts are fast.

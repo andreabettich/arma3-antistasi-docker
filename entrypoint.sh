@@ -24,14 +24,30 @@ if [ ! -f "${ARMA_DIR}/configs/${ARMA_CONFIG}" ]; then
     cp "/defaults/server.cfg" "${ARMA_DIR}/configs/${ARMA_CONFIG}"
 fi
 
-# ---- Install / update Arma 3 dedicated server via SteamCMD (anonymous) ----
+# ---- Build SteamCMD login args ----
+# Anonymous works for SteamCMD itself but Arma 3 Dedicated Server (233780) is
+# no longer reliably installable anonymously — Steam returns "No subscription".
+# If STEAM_USER/STEAM_PASSWORD are set, log in with that account (must own Arma 3).
+if [ -n "${STEAM_USER:-}" ] && [ -n "${STEAM_PASSWORD:-}" ]; then
+    STEAM_LOGIN=( +login "${STEAM_USER}" "${STEAM_PASSWORD}" )
+    echo "[entrypoint] Using Steam account: ${STEAM_USER}"
+else
+    STEAM_LOGIN=( +login anonymous )
+    echo "[entrypoint] Using anonymous Steam login (may fail with 'No subscription' for app ${ARMA_APPID})"
+fi
+
+# ---- Install / update Arma 3 dedicated server via SteamCMD ----
 if [ "${SKIP_INSTALL}" != "true" ]; then
     echo "[entrypoint] Installing/updating Arma 3 server (appid=${ARMA_APPID})..."
-    "${STEAMCMD}" \
-        +force_install_dir "${ARMA_DIR}" \
-        +login anonymous \
-        +app_update "${ARMA_APPID}" validate \
-        +quit
+    if ! "${STEAMCMD}" \
+            +force_install_dir "${ARMA_DIR}" \
+            "${STEAM_LOGIN[@]}" \
+            +app_update "${ARMA_APPID}" validate \
+            +quit; then
+        echo "[entrypoint] SteamCMD app_update failed. Sleeping 30s before exit so the container restart loop doesn't hammer Steam." >&2
+        sleep 30
+        exit 1
+    fi
 fi
 
 # ---- Install Antistasi mod ----
@@ -42,7 +58,7 @@ install_antistasi_workshop() {
     echo "[entrypoint] Downloading Antistasi via Steam Workshop (id=${ANTISTASI_WORKSHOP_ID})..."
     "${STEAMCMD}" \
         +force_install_dir "${ARMA_DIR}" \
-        +login "${STEAM_USER}" "${STEAM_PASSWORD}" \
+        "${STEAM_LOGIN[@]}" \
         +workshop_download_item 107410 "${ANTISTASI_WORKSHOP_ID}" validate \
         +quit
     local src="${ARMA_DIR}/steamapps/workshop/content/107410/${ANTISTASI_WORKSHOP_ID}"
