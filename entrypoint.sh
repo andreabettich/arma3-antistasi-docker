@@ -16,6 +16,10 @@ ARMA_PARAMS="${ARMA_PARAMS:-}"
 
 SKIP_INSTALL="${SKIP_INSTALL:-false}"
 SKIP_MOD_INSTALL="${SKIP_MOD_INSTALL:-false}"
+# When true, run SteamCMD app_update on every start. When false (default),
+# skip it if the server binary is already present — avoids re-hitting Steam
+# on every restart and prevents login rate-limit lockouts.
+FORCE_UPDATE="${FORCE_UPDATE:-false}"
 # github | workshop  — github is more reliable; large Workshop items often
 # fail with the generic SteamCMD "(Failure)" error.
 MOD_SOURCE="${MOD_SOURCE:-github}"
@@ -40,15 +44,20 @@ else
 fi
 
 # ---- Install / update Arma 3 dedicated server via SteamCMD ----
-if [ "${SKIP_INSTALL}" != "true" ]; then
+ARMA_BIN_PATH="${ARMA_DIR}/arma3server_x64"
+if [ "${SKIP_INSTALL}" = "true" ]; then
+    echo "[entrypoint] SKIP_INSTALL=true — skipping SteamCMD."
+elif [ -x "${ARMA_BIN_PATH}" ] && [ "${FORCE_UPDATE}" != "true" ]; then
+    echo "[entrypoint] arma3server_x64 already installed — skipping SteamCMD. Set FORCE_UPDATE=true to force an update."
+else
     echo "[entrypoint] Installing/updating Arma 3 server (appid=${ARMA_APPID})..."
     if ! "${STEAMCMD}" \
             +force_install_dir "${ARMA_DIR}" \
             "${STEAM_LOGIN[@]}" \
             +app_update "${ARMA_APPID}" validate \
             +quit; then
-        echo "[entrypoint] SteamCMD app_update failed. Sleeping 30s before exit so the container restart loop doesn't hammer Steam." >&2
-        sleep 30
+        echo "[entrypoint] SteamCMD app_update failed. Sleeping 5 minutes before exit so the container restart loop doesn't trigger a Steam login rate-limit lockout." >&2
+        sleep 300
         exit 1
     fi
 fi

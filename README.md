@@ -73,7 +73,8 @@ Edit `docker-compose.yml` to change runtime behavior. Useful env vars:
 | `ARMA_LIMITFPS`     | `1000`                             | Server FPS cap. |
 | `ARMA_CONFIG`       | `server.cfg`                       | Config file under `/arma3/configs/`. |
 | `ARMA_PARAMS`       | `-autoInit -loadMissionToMemory`   | Extra CLI flags appended to `arma3server_x64`. |
-| `SKIP_INSTALL`      | `false`                            | Set to `true` after first install to skip the SteamCMD update on every boot. |
+| `SKIP_INSTALL`      | `false`                            | Hard-skip SteamCMD entirely (no login attempt). |
+| `FORCE_UPDATE`      | `false`                            | Run `app_update` even if the server binary is already present. By default we skip SteamCMD when `arma3server_x64` exists, to avoid Steam login rate limits on restart. |
 | `SKIP_MOD_INSTALL`  | `false`                            | Set to `true` to keep your existing `mods/@antistasi`. |
 | `STEAM_USER`        | _(unset)_                          | **Required.** Steam account login (not SteamID, not display name) that owns Arma 3. |
 | `STEAM_PASSWORD`    | _(unset)_                          | **Required.** Password for `STEAM_USER`. |
@@ -142,6 +143,12 @@ can start an Antistasi mission.
   a time, loaded as `-mod` not `-servermod`).
 - **BattlEye kicks everyone.** Set `battlEye = 0` in `server.cfg` while
   debugging, then re-enable.
+- **Steam returns `Rate Limit Exceeded`.** Stop the container immediately
+  (`docker compose stop`) — the restart loop is what's causing it. Wait
+  30–60+ minutes for the cooldown to clear, then bring it back up. Once the
+  server binary is installed, the entrypoint won't re-call SteamCMD on
+  subsequent restarts (set `FORCE_UPDATE=true` only when you actually want to
+  patch).
 - **Antistasi `.7z` extraction fails.** The image installs `p7zip-full` — if
   you've stripped it, reinstall it. RAR5 fallback uses `unrar-free`, which
   doesn't handle RAR5; in that case set `STEAM_USER` / `STEAM_PASSWORD` to
