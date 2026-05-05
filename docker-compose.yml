@@ -1,0 +1,30 @@
+services:
+  arma3:
+    build: .
+    image: arma3-antistasi:latest
+    container_name: arma3-antistasi
+    restart: unless-stopped
+    stop_grace_period: 30s
+    environment:
+      ARMA_PORT: "2302"
+      ARMA_PROFILE: "server"
+      ARMA_LIMITFPS: "1000"
+      ARMA_CONFIG: "server.cfg"
+      ARMA_PARAMS: "-autoInit -loadMissionToMemory"
+      # Optional — set to use Steam Workshop instead of GitHub release:
+      # STEAM_USER: ""
+      # STEAM_PASSWORD: ""
+      # Set to "true" after first install to skip SteamCMD update on every restart:
+      SKIP_INSTALL: "false"
+      SKIP_MOD_INSTALL: "false"
+    ports:
+      - "2302:2302/udp"
+      - "2303:2303/udp"
+      - "2304:2304/udp"
+      - "2305:2305/udp"
+      - "2306:2306/udp"
+    volumes:
+      - arma3-data:/arma3
+
+volumes:
+  arma3-data:
