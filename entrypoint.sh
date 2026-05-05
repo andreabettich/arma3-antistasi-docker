@@ -16,6 +16,9 @@ ARMA_PARAMS="${ARMA_PARAMS:-}"
 
 SKIP_INSTALL="${SKIP_INSTALL:-false}"
 SKIP_MOD_INSTALL="${SKIP_MOD_INSTALL:-false}"
+# github | workshop  — github is more reliable; large Workshop items often
+# fail with the generic SteamCMD "(Failure)" error.
+MOD_SOURCE="${MOD_SOURCE:-github}"
 
 mkdir -p "${ARMA_DIR}/configs" "${ARMA_DIR}/mods" "${ARMA_DIR}/keys"
 
@@ -55,15 +58,25 @@ fi
 #   1. If STEAM_USER + STEAM_PASSWORD set, use SteamCMD workshop_download_item (Workshop)
 #   2. Otherwise download the latest GitHub release archive
 install_antistasi_workshop() {
-    echo "[entrypoint] Downloading Antistasi via Steam Workshop (id=${ANTISTASI_WORKSHOP_ID})..."
-    "${STEAMCMD}" \
-        +force_install_dir "${ARMA_DIR}" \
-        "${STEAM_LOGIN[@]}" \
-        +workshop_download_item 107410 "${ANTISTASI_WORKSHOP_ID}" validate \
-        +quit
     local src="${ARMA_DIR}/steamapps/workshop/content/107410/${ANTISTASI_WORKSHOP_ID}"
-    rm -rf "${ARMA_DIR}/mods/@antistasi"
-    cp -r "${src}" "${ARMA_DIR}/mods/@antistasi"
+    local attempt
+    for attempt in 1 2 3; do
+        echo "[entrypoint] Downloading Antistasi via Steam Workshop (id=${ANTISTASI_WORKSHOP_ID}, attempt ${attempt}/3)..."
+        "${STEAMCMD}" \
+            +force_install_dir "${ARMA_DIR}" \
+            "${STEAM_LOGIN[@]}" \
+            +workshop_download_item 107410 "${ANTISTASI_WORKSHOP_ID}" validate \
+            +quit || true
+        if [ -d "${src}" ] && [ -n "$(ls -A "${src}" 2>/dev/null)" ]; then
+            rm -rf "${ARMA_DIR}/mods/@antistasi"
+            cp -r "${src}" "${ARMA_DIR}/mods/@antistasi"
+            return 0
+        fi
+        echo "[entrypoint] Workshop download attempt ${attempt} failed; retrying after 10s..." >&2
+        sleep 10
+    done
+    echo "[entrypoint] ERROR: Workshop download for ${ANTISTASI_WORKSHOP_ID} failed after 3 attempts." >&2
+    return 1
 }
 
 install_antistasi_github() {
@@ -106,11 +119,22 @@ install_antistasi_github() {
 }
 
 if [ "${SKIP_MOD_INSTALL}" != "true" ] && [ ! -d "${ARMA_DIR}/mods/@antistasi/addons" ]; then
-    if [ -n "${STEAM_USER:-}" ] && [ -n "${STEAM_PASSWORD:-}" ]; then
-        install_antistasi_workshop
-    else
-        install_antistasi_github
-    fi
+    case "${MOD_SOURCE}" in
+        workshop)
+            if [ -z "${STEAM_USER:-}" ] || [ -z "${STEAM_PASSWORD:-}" ]; then
+                echo "[entrypoint] ERROR: MOD_SOURCE=workshop requires STEAM_USER and STEAM_PASSWORD." >&2
+                exit 1
+            fi
+            install_antistasi_workshop
+            ;;
+        github)
+            install_antistasi_github
+            ;;
+        *)
+            echo "[entrypoint] ERROR: unknown MOD_SOURCE='${MOD_SOURCE}' (expected 'github' or 'workshop')." >&2
+            exit 1
+            ;;
+    esac
 fi
 
 # Lowercase the mod tree (Arma 3 on Linux is case-sensitive)

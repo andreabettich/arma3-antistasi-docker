@@ -52,9 +52,11 @@ Antistasi is installed by the entrypoint on first boot:
    `.rar` as fallbacks. The extracted `@Antistasi_The_Mod_*` folder is renamed
    to `@antistasi` so the `-mod=mods/@antistasi` launch param keeps working
    across Antistasi version bumps.
-2. **Optional — Steam Workshop.** Set `STEAM_USER` and `STEAM_PASSWORD` env vars
-   on an account that owns Arma 3. The entrypoint then uses
-   `workshop_download_item 107410 2867537125` instead of the GitHub release.
+2. **Optional — Steam Workshop.** Set `MOD_SOURCE=workshop` (in addition to the
+   already-required `STEAM_USER` / `STEAM_PASSWORD`). The entrypoint then uses
+   `workshop_download_item 107410 2867537125` and retries up to 3× — the
+   Workshop path frequently fails for Antistasi with SteamCMD's generic
+   `Download item ... failed (Failure)` error, so GitHub is the default.
 
 The mod tree is lowercased after extraction (Arma 3 on Linux is
 case-sensitive). Mod `.bikey` files are copied into `/arma3/keys/` so signature
@@ -73,8 +75,9 @@ Edit `docker-compose.yml` to change runtime behavior. Useful env vars:
 | `ARMA_PARAMS`       | `-autoInit -loadMissionToMemory`   | Extra CLI flags appended to `arma3server_x64`. |
 | `SKIP_INSTALL`      | `false`                            | Set to `true` after first install to skip the SteamCMD update on every boot. |
 | `SKIP_MOD_INSTALL`  | `false`                            | Set to `true` to keep your existing `mods/@antistasi`. |
-| `STEAM_USER`        | _(unset)_                          | If set with `STEAM_PASSWORD`, switches mod install to Steam Workshop. |
-| `STEAM_PASSWORD`    | _(unset)_                          | See above. |
+| `STEAM_USER`        | _(unset)_                          | **Required.** Steam account login (not SteamID, not display name) that owns Arma 3. |
+| `STEAM_PASSWORD`    | _(unset)_                          | **Required.** Password for `STEAM_USER`. |
+| `MOD_SOURCE`        | `github`                           | `github` or `workshop`. Workshop is flakier; defaults to GitHub. |
 
 `server.cfg` is copied into the volume on first boot and **not** overwritten
 afterwards. To edit it later, change the file inside the volume:

@@ -20,6 +20,9 @@ services:
       # Set to "true" after first install to skip SteamCMD update on every restart:
       SKIP_INSTALL: "false"
       SKIP_MOD_INSTALL: "false"
+      # github | workshop — github is more reliable; large Workshop items
+      # frequently fail with SteamCMD's generic "(Failure)" error.
+      MOD_SOURCE: "github"
     ports:
       - "2302:2302/udp"
       - "2303:2303/udp"
