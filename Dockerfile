@@ -8,7 +8,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-RUN apt-get update \
+RUN dpkg --add-architecture i386 \
+ && apt-get update \
  && apt-get install -y --no-install-recommends \
         ca-certificates \
         curl \
@@ -17,6 +18,7 @@ RUN apt-get update \
         unzip \
         unrar-free \
         p7zip-full \
+        software-properties-common \
         lib32gcc-s1 \
         lib32stdc++6 \
         libcurl4 \
@@ -25,6 +27,12 @@ RUN apt-get update \
         libc6 \
         locales \
         tini \
+ && add-apt-repository -y multiverse \
+ && echo "steam steam/question select I AGREE" | debconf-set-selections \
+ && echo "steam steam/license note ''" | debconf-set-selections \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends steamcmd \
+ && ln -sf /usr/games/steamcmd /usr/local/bin/steamcmd \
  && locale-gen en_US.UTF-8 \
  && rm -rf /var/lib/apt/lists/*
 
@@ -36,12 +44,11 @@ RUN userdel -r ubuntu 2>/dev/null || true \
  && chown -R steam:steam ${ARMA_DIR} ${STEAM_HOME}
 
 USER steam
-WORKDIR ${STEAM_HOME}/steamcmd
-
-RUN curl -fsSL https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz \
-        | tar -xzf -
-
 WORKDIR ${ARMA_DIR}
+
+# Pre-bootstrap SteamCMD as the steam user so first real run doesn't race
+# the self-update step (the cause of "Steamcmd needs to be online to update").
+RUN steamcmd +quit || true
 
 COPY --chown=steam:steam server.cfg /defaults/server.cfg
 COPY --chown=steam:steam entrypoint.sh /usr/local/bin/entrypoint.sh

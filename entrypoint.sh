@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ARMA_DIR="${ARMA_DIR:-/arma3}"
-STEAMCMD="${STEAM_HOME:-/home/steam}/steamcmd/steamcmd.sh"
+STEAMCMD="${STEAMCMD:-steamcmd}"
 ARMA_APPID="${ARMA_APPID:-233780}"
 ANTISTASI_WORKSHOP_ID="${ANTISTASI_WORKSHOP_ID:-2867537125}"
 
