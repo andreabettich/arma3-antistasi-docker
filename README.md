@@ -109,6 +109,8 @@ In-game, type `#login <ADMIN_PASSWORD>` in chat to claim admin, then
 | `LOCAL_MOD_PATH`     | `/mod-src`                         | Path inside the container the local-mod source reads from. |
 | `ANTISTASI_VERSION`  | `latest`                           | GitHub release tag (e.g. `3.11.1`) or `latest`. |
 | `FORCE_MOD_UPDATE`   | `false`                            | One-shot: re-install the mod even if the marker matches. |
+| `BATTLEYE_ENABLE`    | `1`                                | `0` to disable BattlEye on the server. Useful for debugging client kicks. |
+| `VERIFY_SIGNATURES`  | `2`                                | `0` = off, `2` = enforce signed mods. Drop to `0` if `verifySignatures = 2` is rejecting clients while you investigate. |
 
 ## Savegames
 

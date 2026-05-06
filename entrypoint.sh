@@ -21,6 +21,8 @@ export ADMIN_PASSWORD="${ADMIN_PASSWORD:-changeme}"
 export MAX_PLAYERS="${MAX_PLAYERS:-20}"
 export MISSION_TEMPLATE="${MISSION_TEMPLATE:-Antistasi_Altis.Altis}"
 export MISSION_DIFFICULTY="${MISSION_DIFFICULTY:-Regular}"
+export BATTLEYE_ENABLE="${BATTLEYE_ENABLE:-1}"            # 0 = disable BE
+export VERIFY_SIGNATURES="${VERIFY_SIGNATURES:-2}"        # 0 = off, 2 = enforce
 
 SKIP_INSTALL="${SKIP_INSTALL:-false}"
 SKIP_MOD_INSTALL="${SKIP_MOD_INSTALL:-false}"

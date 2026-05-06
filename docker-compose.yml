@@ -18,6 +18,9 @@ services:
       MAX_PLAYERS: "${MAX_PLAYERS:-20}"
       MISSION_TEMPLATE: "${MISSION_TEMPLATE:-Antistasi_Altis.Altis}"
       MISSION_DIFFICULTY: "${MISSION_DIFFICULTY:-Regular}"
+      # Diagnostic / security knobs — flip to relax checks while debugging:
+      BATTLEYE_ENABLE: "${BATTLEYE_ENABLE:-1}"          # 0 = disable BE
+      VERIFY_SIGNATURES: "${VERIFY_SIGNATURES:-2}"      # 0 = off, 2 = enforce
       # REQUIRED for the Arma 3 dedicated server install — anonymous SteamCMD
       # login is rejected by Steam ("No subscription"). Use an account that
       # owns Arma 3. Same credentials are also used for Steam Workshop mod
