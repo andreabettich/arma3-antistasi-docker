@@ -23,6 +23,11 @@ services:
       # local | github | workshop — leave unset to auto-pick: `local` if
       # ./files contains an Antistasi mod folder, else `github`.
       # MOD_SOURCE: "local"
+      # Antistasi release tag (e.g. "3.11.1") or "latest" (default).
+      # Change this and `docker compose restart arma3` to update or roll back.
+      ANTISTASI_VERSION: "${ANTISTASI_VERSION:-latest}"
+      # Force a one-shot mod re-install even if the installed marker matches:
+      # FORCE_MOD_UPDATE: "true"
     ports:
       - "2302:2302/udp"
       - "2303:2303/udp"

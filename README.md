@@ -85,6 +85,8 @@ Edit `docker-compose.yml` to change runtime behavior. Useful env vars:
 | `STEAM_PASSWORD`    | _(unset)_                          | **Required.** Password for `STEAM_USER`. |
 | `MOD_SOURCE`        | _auto_                             | `local`, `github`, or `workshop`. If unset, picks `local` when `./files` has an Antistasi folder, else `github`. |
 | `LOCAL_MOD_PATH`    | `/mod-src`                         | Path inside the container that the local-mod source reads from (bind-mounted from `./files`). |
+| `ANTISTASI_VERSION` | `latest`                           | GitHub release tag (e.g. `3.11.1`) or `latest`. Drives the version marker; changing it triggers a re-download on next start. |
+| `FORCE_MOD_UPDATE`  | `false`                            | One-shot: re-install the mod even if the installed marker matches the requested version. |
 
 `server.cfg` is copied into the volume on first boot and **not** overwritten
 afterwards. To edit it later, change the file inside the volume:
@@ -95,6 +97,32 @@ docker compose restart arma3
 ```
 
 …or copy a new one in from the host with `docker cp`.
+
+## Updating Antistasi
+
+The entrypoint records the installed version in
+`mods/@antistasi/.installed-version`. When the requested version doesn't
+match the marker, the mod is re-downloaded on next start.
+
+```bash
+# pin to a specific release
+echo 'ANTISTASI_VERSION=3.11.1' >> .env
+docker compose restart arma3
+
+# always track the latest GitHub release
+echo 'ANTISTASI_VERSION=latest' >> .env
+docker compose restart arma3
+
+# one-shot forced re-install (no version bump):
+FORCE_MOD_UPDATE=true docker compose up -d
+```
+
+Marker values per source:
+
+- `github`: the release tag, or `latest`.
+- `local`: literal `local` (drop in new files and set `FORCE_MOD_UPDATE=true`
+  once to refresh).
+- `workshop`: `workshop:<id>`.
 
 ## Ports
 

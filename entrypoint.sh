@@ -20,6 +20,12 @@ SKIP_MOD_INSTALL="${SKIP_MOD_INSTALL:-false}"
 # skip it if the server binary is already present — avoids re-hitting Steam
 # on every restart and prevents login rate-limit lockouts.
 FORCE_UPDATE="${FORCE_UPDATE:-false}"
+# Antistasi release tag (e.g. "3.11.1") or "latest" — only used when fetching
+# from GitHub. Drives the marker file under mods/@antistasi/.installed-version
+# and triggers a re-download when changed.
+ANTISTASI_VERSION="${ANTISTASI_VERSION:-latest}"
+# When true, re-install the mod even if the marker matches.
+FORCE_MOD_UPDATE="${FORCE_MOD_UPDATE:-false}"
 # local | github | workshop  — auto-picks `local` when LOCAL_MOD_PATH has
 # something to copy, otherwise falls back to `github`. Workshop is opt-in.
 LOCAL_MOD_PATH="${LOCAL_MOD_PATH:-/mod-src}"
@@ -88,6 +94,7 @@ install_antistasi_workshop() {
         if [ -d "${src}" ] && [ -n "$(ls -A "${src}" 2>/dev/null)" ]; then
             rm -rf "${ARMA_DIR}/mods/@antistasi"
             cp -r "${src}" "${ARMA_DIR}/mods/@antistasi"
+            write_marker "workshop:${ANTISTASI_WORKSHOP_ID}"
             return 0
         fi
         echo "[entrypoint] Workshop download attempt ${attempt} failed; retrying after 10s..." >&2
@@ -95,6 +102,10 @@ install_antistasi_workshop() {
     done
     echo "[entrypoint] ERROR: Workshop download for ${ANTISTASI_WORKSHOP_ID} failed after 3 attempts." >&2
     return 1
+}
+
+write_marker() {
+    echo "$1" > "${ARMA_DIR}/mods/@antistasi/.installed-version"
 }
 
 install_antistasi_local() {
@@ -113,13 +124,19 @@ install_antistasi_local() {
     echo "[entrypoint] Local mod root: ${src}"
     rm -rf "${ARMA_DIR}/mods/@antistasi"
     cp -r "${src}" "${ARMA_DIR}/mods/@antistasi"
+    write_marker "local"
 }
 
 install_antistasi_github() {
-    echo "[entrypoint] Downloading Antistasi from GitHub releases..."
+    echo "[entrypoint] Downloading Antistasi from GitHub releases (version=${ANTISTASI_VERSION})..."
     local tmp
     tmp="$(mktemp -d)"
-    local api="https://api.github.com/repos/official-antistasi-community/A3-Antistasi/releases/latest"
+    local api
+    if [ "${ANTISTASI_VERSION}" = "latest" ]; then
+        api="https://api.github.com/repos/official-antistasi-community/A3-Antistasi/releases/latest"
+    else
+        api="https://api.github.com/repos/official-antistasi-community/A3-Antistasi/releases/tags/${ANTISTASI_VERSION}"
+    fi
     local urls asset_url
     urls="$(curl -fsSL "${api}" \
         | grep -Eo '"browser_download_url": *"[^"]+\.(7z|zip|rar)"' \
@@ -143,8 +160,9 @@ install_antistasi_github() {
         zip) unzip -q "${fname}" -d "${stage}/" ;;
     esac
     # The mod root is whichever directory contains an `addons/` subdir.
-    # That's universal for Arma 3 mods regardless of how the wrapper folder
-    # is named (or whether one exists at all).
+    # That's universal for Arma 3 mods. It works whether the archive has a
+    # top-level wrapper folder (e.g. @Antistasi_The_Mod_3_11_1/addons/) or
+    # ships everything at the archive root (addons/ + Keys/ + mod.cpp).
     local addons_dir extracted
     addons_dir="$(find "${stage}" -mindepth 1 -maxdepth 4 -type d -iname 'addons' | head -n1)"
     if [ -z "${addons_dir}" ]; then
@@ -156,10 +174,32 @@ install_antistasi_github() {
     echo "[entrypoint] Mod root: ${extracted}"
     rm -rf "${ARMA_DIR}/mods/@antistasi"
     mv "${extracted}" "${ARMA_DIR}/mods/@antistasi"
+    write_marker "${ANTISTASI_VERSION}"
     rm -rf "${tmp}"
 }
 
-if [ "${SKIP_MOD_INSTALL}" != "true" ] && [ ! -d "${ARMA_DIR}/mods/@antistasi/addons" ]; then
+# Decide whether we need to (re)install the mod. The marker file is written
+# by every successful install path and tells us what's currently on disk.
+case "${MOD_SOURCE}" in
+    local)    requested_marker="local" ;;
+    workshop) requested_marker="workshop:${ANTISTASI_WORKSHOP_ID}" ;;
+    github)   requested_marker="${ANTISTASI_VERSION}" ;;
+    *)        requested_marker="${MOD_SOURCE}" ;;
+esac
+need_install=true
+if [ -d "${ARMA_DIR}/mods/@antistasi/addons" ] \
+   && [ -f "${ARMA_DIR}/mods/@antistasi/.installed-version" ] \
+   && [ "${FORCE_MOD_UPDATE}" != "true" ]; then
+    installed_marker="$(cat "${ARMA_DIR}/mods/@antistasi/.installed-version")"
+    if [ "${installed_marker}" = "${requested_marker}" ]; then
+        echo "[entrypoint] Mod already installed (${installed_marker}) — skipping download. Set FORCE_MOD_UPDATE=true to refresh."
+        need_install=false
+    else
+        echo "[entrypoint] Mod refresh: installed=${installed_marker}, requested=${requested_marker}"
+    fi
+fi
+
+if [ "${SKIP_MOD_INSTALL}" != "true" ] && [ "${need_install}" = "true" ]; then
     echo "[entrypoint] MOD_SOURCE=${MOD_SOURCE}"
     case "${MOD_SOURCE}" in
         local)
