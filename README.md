@@ -199,6 +199,27 @@ All UDP. Map every one of these on your firewall / router:
 | 2305  | VON (voice)        |
 | 2306  | BattlEye           |
 
+## Host firewall (UFW)
+
+```bash
+sudo ./scripts/setup-ufw.sh   # adds allow rules; does NOT enable UFW yet
+sudo ufw enable               # enable once you've verified rules look right
+```
+
+Rules added (idempotent, safe to re-run):
+
+- `OpenSSH` — keep your SSH session alive.
+- `2302..2306/udp` — the five Arma 3 server ports. The base shifts with
+  `ARMA_PORT` from `.env` if you've moved the server off the default.
+- Default: deny incoming, allow outgoing.
+
+> **Docker caveat:** Docker manages its own iptables chain ahead of UFW, so
+> any port published in `docker-compose.yml` is reachable from the internet
+> *regardless* of UFW. The setup script handles non-Docker traffic correctly
+> (SSH and any host services). To also firewall Docker-published ports, look
+> at [`ufw-docker`](https://github.com/chaifeng/ufw-docker), which patches
+> rules into `DOCKER-USER`. Ask if you want me to wire that in.
+
 ## Common operations
 
 ```bash
