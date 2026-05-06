@@ -64,9 +64,21 @@ fi
 # is present yet. The newest file wins.
 SAVE_DEST="${ARMA_DIR}/configs/profiles/home/${ARMA_PROFILE}/${ARMA_PROFILE}.vars.Arma3Profile"
 if [ -d /saves/import ] && [ ! -s "${SAVE_DEST}" ]; then
-    import="$(ls -t /saves/import/*.vars.Arma3Profile 2>/dev/null | head -n1)"
-    if [ -n "${import}" ]; then
+    # Use a glob with nullglob so no matches => empty array (no failure under
+    # set -e + pipefail).
+    shopt -s nullglob
+    saves=(/saves/import/*.vars.Arma3Profile)
+    shopt -u nullglob
+    if [ "${#saves[@]}" -gt 0 ]; then
+        # newest by mtime
+        import=""
+        for f in "${saves[@]}"; do
+            if [ -z "${import}" ] || [ "${f}" -nt "${import}" ]; then
+                import="${f}"
+            fi
+        done
         echo "[entrypoint] Importing savegame: ${import} -> ${SAVE_DEST}"
+        mkdir -p "$(dirname "${SAVE_DEST}")"
         cp -f "${import}" "${SAVE_DEST}"
     fi
 fi
