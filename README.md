@@ -22,6 +22,13 @@ sudo apt install docker.io docker-compose-v2
 # in this directory
 cp .env.example .env
 # edit .env and fill in STEAM_USER / STEAM_PASSWORD (account that owns Arma 3)
+# and ADMIN_PASSWORD / SERVER_HOSTNAME / SERVER_PASSWORD as desired
+
+# Bind-mount dirs need to be writable by UID 1000 (the steam user inside
+# the container). Skip this step if you'd rather use named volumes only.
+mkdir -p ./files ./profiles ./saves/import ./saves/backups
+sudo chown -R 1000:1000 ./files ./profiles ./saves
+
 docker compose up -d --build
 docker compose logs -f
 ```
@@ -38,9 +45,10 @@ docker compose logs -f
 First boot pulls ~15 GB of Arma 3 data into the named volume `arma3-data`. After
 that, restarts are fast.
 
-> **Before exposing the server publicly**, edit `server.cfg` and change
-> `passwordAdmin = "changeme"` to something private. That password is what you
-> type after `#login` in chat to become server admin.
+> **Before exposing the server publicly**, set `ADMIN_PASSWORD` in `.env` to
+> something private. That password is what you type after `#login` in chat
+> to become server admin. The entrypoint warns in the logs if it's left as
+> the default `changeme`.
 
 ## How mods are installed
 
@@ -102,12 +110,15 @@ In-game, type `#login <ADMIN_PASSWORD>` in chat to claim admin, then
 | `ARMA_LIMITFPS`      | `1000`                             | Server FPS cap. |
 | `ARMA_CONFIG`        | `server.cfg`                       | Config file under `/arma3/configs/`. |
 | `ARMA_PARAMS`        | `-autoInit -loadMissionToMemory`   | Extra CLI flags appended to `arma3server_x64`. |
+| `ARMA_BINARY`        | `./arma3server_x64`                | Server binary launched from `/arma3`. Override e.g. for `arma3serverprofiling_x64`. |
+| `ARMA_WORLD`         | `empty`                            | Map preloaded by the engine before any mission loads. `empty` is the standard for dedicated servers. |
 | `SKIP_INSTALL`       | `false`                            | Hard-skip SteamCMD entirely (no login attempt). |
-| `FORCE_UPDATE`       | `false`                            | Run `app_update` even if the binary is already present. |
+| `FORCE_UPDATE`       | `false`                            | Re-run `app_update` on every start even if the binary is already present. Default `false` so restarts don't re-hit Steam — repeated logins can trip Steam's per-account rate limiter. |
 | `SKIP_MOD_INSTALL`   | `false`                            | Set to `true` to keep the existing `mods/@antistasi`. |
 | `MOD_SOURCE`         | _auto_                             | `local`, `github`, or `workshop`. Auto-picks `local` when `./files` has Antistasi, else `github`. |
 | `LOCAL_MOD_PATH`     | `/mod-src`                         | Path inside the container the local-mod source reads from. |
 | `ANTISTASI_VERSION`  | `latest`                           | GitHub release tag (e.g. `3.11.1`) or `latest`. |
+| `ANTISTASI_WORKSHOP_ID` | `2867537125`                    | Steam Workshop ID used when `MOD_SOURCE=workshop`. |
 | `FORCE_MOD_UPDATE`   | `false`                            | One-shot: re-install the mod even if the marker matches. |
 | `BATTLEYE_ENABLE`    | `1`                                | `0` to disable BattlEye on the server. Useful for debugging client kicks. |
 | `VERIFY_SIGNATURES`  | `2`                                | `0` = off, `2` = enforce signed mods. Drop to `0` if `verifySignatures = 2` is rejecting clients while you investigate. |
