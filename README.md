@@ -44,19 +44,24 @@ that, restarts are fast.
 
 ## How mods are installed
 
-Antistasi is installed by the entrypoint on first boot:
+Antistasi is installed by the entrypoint on first boot. Three sources, in
+auto-detect order:
 
-1. **Default — GitHub release.** Pulls the latest release asset from
-   `official-antistasi-community/A3-Antistasi`. Antistasi ships a `.7z`
-   (e.g. `@Antistasi_The_Mod_3_11_1.7z`); the entrypoint also handles `.zip` /
-   `.rar` as fallbacks. The extracted `@Antistasi_The_Mod_*` folder is renamed
-   to `@antistasi` so the `-mod=mods/@antistasi` launch param keeps working
-   across Antistasi version bumps.
-2. **Optional — Steam Workshop.** Set `MOD_SOURCE=workshop` (in addition to the
-   already-required `STEAM_USER` / `STEAM_PASSWORD`). The entrypoint then uses
-   `workshop_download_item 107410 2867537125` and retries up to 3× — the
-   Workshop path frequently fails for Antistasi with SteamCMD's generic
-   `Download item ... failed (Failure)` error, so GitHub is the default.
+1. **Local (recommended).** Drop the extracted `@Antistasi_The_Mod_*` folder
+   into `./files/` on the host (the dir is bind-mounted into the container at
+   `/mod-src`). Easy to update: replace the folder, `docker compose restart
+   arma3`. No network / no Steam dependency. Auto-picked when `./files` has a
+   directory containing `addons/`.
+2. **GitHub release.** Pulls the latest `.7z` (with `.zip` / `.rar`
+   fallbacks) from `official-antistasi-community/A3-Antistasi`. Used when
+   `./files` is empty.
+3. **Steam Workshop.** Opt in with `MOD_SOURCE=workshop` (also requires
+   `STEAM_USER` / `STEAM_PASSWORD`). Workshop is the least reliable path —
+   SteamCMD often fails large items with the generic
+   `Download item ... failed (Failure)` error — so it's not a default.
+
+Whatever the source, the resulting mod root is renamed to `@antistasi` so the
+`-mod=mods/@antistasi` launch param keeps working across version bumps.
 
 The mod tree is lowercased after extraction (Arma 3 on Linux is
 case-sensitive). Mod `.bikey` files are copied into `/arma3/keys/` so signature
@@ -78,7 +83,8 @@ Edit `docker-compose.yml` to change runtime behavior. Useful env vars:
 | `SKIP_MOD_INSTALL`  | `false`                            | Set to `true` to keep your existing `mods/@antistasi`. |
 | `STEAM_USER`        | _(unset)_                          | **Required.** Steam account login (not SteamID, not display name) that owns Arma 3. |
 | `STEAM_PASSWORD`    | _(unset)_                          | **Required.** Password for `STEAM_USER`. |
-| `MOD_SOURCE`        | `github`                           | `github` or `workshop`. Workshop is flakier; defaults to GitHub. |
+| `MOD_SOURCE`        | _auto_                             | `local`, `github`, or `workshop`. If unset, picks `local` when `./files` has an Antistasi folder, else `github`. |
+| `LOCAL_MOD_PATH`    | `/mod-src`                         | Path inside the container that the local-mod source reads from (bind-mounted from `./files`). |
 
 `server.cfg` is copied into the volume on first boot and **not** overwritten
 afterwards. To edit it later, change the file inside the volume:

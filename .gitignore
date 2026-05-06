@@ -1,2 +1,6 @@
 .claude/
 .env
+
+# Mod source tree — keep the dir for the bind mount, ignore its contents.
+files/*
+!files/.gitkeep

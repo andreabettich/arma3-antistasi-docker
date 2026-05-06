@@ -20,9 +20,18 @@ SKIP_MOD_INSTALL="${SKIP_MOD_INSTALL:-false}"
 # skip it if the server binary is already present — avoids re-hitting Steam
 # on every restart and prevents login rate-limit lockouts.
 FORCE_UPDATE="${FORCE_UPDATE:-false}"
-# github | workshop  — github is more reliable; large Workshop items often
-# fail with the generic SteamCMD "(Failure)" error.
-MOD_SOURCE="${MOD_SOURCE:-github}"
+# local | github | workshop  — auto-picks `local` when LOCAL_MOD_PATH has
+# something to copy, otherwise falls back to `github`. Workshop is opt-in.
+LOCAL_MOD_PATH="${LOCAL_MOD_PATH:-/mod-src}"
+if [ -z "${MOD_SOURCE:-}" ]; then
+    if [ -d "${LOCAL_MOD_PATH}" ] \
+       && find "${LOCAL_MOD_PATH}" -mindepth 1 -maxdepth 3 -type d -iname 'addons' \
+              -print -quit 2>/dev/null | grep -q .; then
+        MOD_SOURCE="local"
+    else
+        MOD_SOURCE="github"
+    fi
+fi
 
 mkdir -p "${ARMA_DIR}/configs" "${ARMA_DIR}/mods" "${ARMA_DIR}/keys"
 
@@ -88,6 +97,24 @@ install_antistasi_workshop() {
     return 1
 }
 
+install_antistasi_local() {
+    echo "[entrypoint] Installing Antistasi from local path: ${LOCAL_MOD_PATH}"
+    if [ ! -d "${LOCAL_MOD_PATH}" ]; then
+        echo "[entrypoint] ERROR: ${LOCAL_MOD_PATH} doesn't exist (mount your mod files there)." >&2
+        return 1
+    fi
+    local addons_dir src
+    addons_dir="$(find "${LOCAL_MOD_PATH}" -mindepth 1 -maxdepth 4 -type d -iname 'addons' | head -n1)"
+    if [ -z "${addons_dir}" ]; then
+        echo "[entrypoint] ERROR: no addons/ directory under ${LOCAL_MOD_PATH}." >&2
+        return 1
+    fi
+    src="$(dirname "${addons_dir}")"
+    echo "[entrypoint] Local mod root: ${src}"
+    rm -rf "${ARMA_DIR}/mods/@antistasi"
+    cp -r "${src}" "${ARMA_DIR}/mods/@antistasi"
+}
+
 install_antistasi_github() {
     echo "[entrypoint] Downloading Antistasi from GitHub releases..."
     local tmp
@@ -111,24 +138,33 @@ install_antistasi_github() {
     local stage="${tmp}/stage"
     mkdir -p "${stage}"
     case "${fname##*.}" in
-        7z)  7z x -y -o"${stage}" "${fname}" >/dev/null ;;
+        7z)  7z x -y -o"${stage}" "${fname}" ;;
         rar) unrar-free -x "${fname}" "${stage}/" ;;
         zip) unzip -q "${fname}" -d "${stage}/" ;;
     esac
-    # Archive contains a top-level @Antistasi_The_Mod_X_Y_Z folder — find it
-    local extracted
-    extracted="$(find "${stage}" -maxdepth 2 -type d -iname '@*' | head -n1)"
-    if [ -z "${extracted}" ]; then
-        echo "[entrypoint] ERROR: no @<mod> folder found in archive" >&2
+    # The mod root is whichever directory contains an `addons/` subdir.
+    # That's universal for Arma 3 mods regardless of how the wrapper folder
+    # is named (or whether one exists at all).
+    local addons_dir extracted
+    addons_dir="$(find "${stage}" -mindepth 1 -maxdepth 4 -type d -iname 'addons' | head -n1)"
+    if [ -z "${addons_dir}" ]; then
+        echo "[entrypoint] ERROR: no addons/ directory found in archive. Layout was:" >&2
+        find "${stage}" -maxdepth 3 -printf '  %p\n' >&2 || true
         return 1
     fi
+    extracted="$(dirname "${addons_dir}")"
+    echo "[entrypoint] Mod root: ${extracted}"
     rm -rf "${ARMA_DIR}/mods/@antistasi"
     mv "${extracted}" "${ARMA_DIR}/mods/@antistasi"
     rm -rf "${tmp}"
 }
 
 if [ "${SKIP_MOD_INSTALL}" != "true" ] && [ ! -d "${ARMA_DIR}/mods/@antistasi/addons" ]; then
+    echo "[entrypoint] MOD_SOURCE=${MOD_SOURCE}"
     case "${MOD_SOURCE}" in
+        local)
+            install_antistasi_local
+            ;;
         workshop)
             if [ -z "${STEAM_USER:-}" ] || [ -z "${STEAM_PASSWORD:-}" ]; then
                 echo "[entrypoint] ERROR: MOD_SOURCE=workshop requires STEAM_USER and STEAM_PASSWORD." >&2
@@ -140,7 +176,7 @@ if [ "${SKIP_MOD_INSTALL}" != "true" ] && [ ! -d "${ARMA_DIR}/mods/@antistasi/ad
             install_antistasi_github
             ;;
         *)
-            echo "[entrypoint] ERROR: unknown MOD_SOURCE='${MOD_SOURCE}' (expected 'github' or 'workshop')." >&2
+            echo "[entrypoint] ERROR: unknown MOD_SOURCE='${MOD_SOURCE}' (expected 'local', 'github', or 'workshop')." >&2
             exit 1
             ;;
     esac
