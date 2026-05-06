@@ -4,3 +4,15 @@
 # Mod source tree — keep the dir for the bind mount, ignore its contents.
 files/*
 !files/.gitkeep
+
+# Profile dir (live save data) and savegame imports/backups — host-only.
+profiles/*
+!profiles/.gitkeep
+saves/*
+!saves/.gitkeep
+!saves/import/
+saves/import/*
+!saves/import/.gitkeep
+!saves/backups/
+saves/backups/*
+!saves/backups/.gitkeep

@@ -19,6 +19,7 @@ RUN dpkg --add-architecture i386 \
         unrar-free \
         p7zip-full \
         software-properties-common \
+        gettext-base \
         lib32gcc-s1 \
         lib32stdc++6 \
         libcurl4 \

@@ -69,34 +69,97 @@ checking (`verifySignatures = 2`) works.
 
 ## Configuration
 
-Edit `docker-compose.yml` to change runtime behavior. Useful env vars:
+Set these in `.env` (preferred) or `docker-compose.yml`. The entrypoint
+re-renders `server.cfg` from a template on every boot, so changes apply
+on `docker compose restart arma3` — no need to edit a file inside the volume.
 
-| Var                 | Default                            | Notes |
-| ------------------- | ---------------------------------- | ----- |
-| `ARMA_PORT`         | `2302`                             | UDP game port. If you change this, also update the `ports:` mapping. |
-| `ARMA_PROFILE`      | `server`                           | Profile name (used for `-name=` and `-profiles=`). |
-| `ARMA_LIMITFPS`     | `1000`                             | Server FPS cap. |
-| `ARMA_CONFIG`       | `server.cfg`                       | Config file under `/arma3/configs/`. |
-| `ARMA_PARAMS`       | `-autoInit -loadMissionToMemory`   | Extra CLI flags appended to `arma3server_x64`. |
-| `SKIP_INSTALL`      | `false`                            | Hard-skip SteamCMD entirely (no login attempt). |
-| `FORCE_UPDATE`      | `false`                            | Run `app_update` even if the server binary is already present. By default we skip SteamCMD when `arma3server_x64` exists, to avoid Steam login rate limits on restart. |
-| `SKIP_MOD_INSTALL`  | `false`                            | Set to `true` to keep your existing `mods/@antistasi`. |
-| `STEAM_USER`        | _(unset)_                          | **Required.** Steam account login (not SteamID, not display name) that owns Arma 3. |
-| `STEAM_PASSWORD`    | _(unset)_                          | **Required.** Password for `STEAM_USER`. |
-| `MOD_SOURCE`        | _auto_                             | `local`, `github`, or `workshop`. If unset, picks `local` when `./files` has an Antistasi folder, else `github`. |
-| `LOCAL_MOD_PATH`    | `/mod-src`                         | Path inside the container that the local-mod source reads from (bind-mounted from `./files`). |
-| `ANTISTASI_VERSION` | `latest`                           | GitHub release tag (e.g. `3.11.1`) or `latest`. Drives the version marker; changing it triggers a re-download on next start. |
-| `FORCE_MOD_UPDATE`  | `false`                            | One-shot: re-install the mod even if the installed marker matches the requested version. |
+### Server name and passwords
 
-`server.cfg` is copied into the volume on first boot and **not** overwritten
-afterwards. To edit it later, change the file inside the volume:
+```
+SERVER_HOSTNAME=My Antistasi Server
+SERVER_PASSWORD=joinpassword       # leave empty for a public server
+ADMIN_PASSWORD=pick-something-strong
+```
+
+In-game, type `#login <ADMIN_PASSWORD>` in chat to claim admin, then
+`#missions` to open the mission selector. The entrypoint logs a warning if
+`ADMIN_PASSWORD` is left as `changeme`.
+
+### All env vars
+
+| Var                  | Default                            | Notes |
+| -------------------- | ---------------------------------- | ----- |
+| `SERVER_HOSTNAME`    | `Antistasi Dedicated`              | Display name in the server browser. |
+| `SERVER_PASSWORD`    | _(empty)_                          | Join password. Empty = public. |
+| `ADMIN_PASSWORD`     | `changeme`                         | In-game `#login <pwd>` to gain admin. **Change this.** |
+| `MAX_PLAYERS`        | `20`                               | Player slot count. |
+| `MISSION_TEMPLATE`   | `Antistasi_Altis.Altis`            | Mission to load (e.g. `Antistasi_Tanoa.Tanoa`, `Antistasi_Enoch.Enoch`). |
+| `MISSION_DIFFICULTY` | `Regular`                          | `Recruit` / `Regular` / `Veteran` / `Custom`. |
+| `STEAM_USER`         | _(unset)_                          | **Required** Steam login (not SteamID) that owns Arma 3. |
+| `STEAM_PASSWORD`     | _(unset)_                          | **Required.** Password for `STEAM_USER`. |
+| `ARMA_PORT`          | `2302`                             | UDP game port. Update `ports:` mapping if you change this. |
+| `ARMA_PROFILE`       | `server`                           | Profile name (used for `-name=` and the save path). |
+| `ARMA_LIMITFPS`      | `1000`                             | Server FPS cap. |
+| `ARMA_CONFIG`        | `server.cfg`                       | Config file under `/arma3/configs/`. |
+| `ARMA_PARAMS`        | `-autoInit -loadMissionToMemory`   | Extra CLI flags appended to `arma3server_x64`. |
+| `SKIP_INSTALL`       | `false`                            | Hard-skip SteamCMD entirely (no login attempt). |
+| `FORCE_UPDATE`       | `false`                            | Run `app_update` even if the binary is already present. |
+| `SKIP_MOD_INSTALL`   | `false`                            | Set to `true` to keep the existing `mods/@antistasi`. |
+| `MOD_SOURCE`         | _auto_                             | `local`, `github`, or `workshop`. Auto-picks `local` when `./files` has Antistasi, else `github`. |
+| `LOCAL_MOD_PATH`     | `/mod-src`                         | Path inside the container the local-mod source reads from. |
+| `ANTISTASI_VERSION`  | `latest`                           | GitHub release tag (e.g. `3.11.1`) or `latest`. |
+| `FORCE_MOD_UPDATE`   | `false`                            | One-shot: re-install the mod even if the marker matches. |
+
+## Savegames
+
+The container's profile directory is bind-mounted to `./profiles` on the host,
+so the live save file is just a regular file you can copy, edit, scp, or
+back up:
+
+```
+./profiles/home/${ARMA_PROFILE}/${ARMA_PROFILE}.vars.Arma3Profile
+```
+
+With the default `ARMA_PROFILE=server`, that's
+`./profiles/home/server/server.vars.Arma3Profile`.
+
+### Importing a save you already have
 
 ```bash
-docker compose exec arma3 vi /arma3/configs/server.cfg
+# from your laptop
+scp ~/Documents/Arma\ 3\ -\ Other\ Profiles/<profile>/<profile>.vars.Arma3Profile \
+    root@server:/opt/arma3/arma3-antistasi-docker/saves/import/myrun.vars.Arma3Profile
+```
+
+The entrypoint copies the newest `*.vars.Arma3Profile` from `./saves/import`
+into the active profile slot **only if no save exists yet** (so re-imports
+don't accidentally clobber server progress). To force-replace a save mid-run,
+use `scripts/restore-save.sh` (see below) or copy the file directly to the
+profile path above and `docker compose restart arma3`.
+
+> **Caveat:** Singleplayer Antistasi saves and dedicated-server saves are
+> stored under different variable names inside the same `.vars.Arma3Profile`.
+> If your local game was a singleplayer / host-on-LAN session, the dedicated
+> server may not see it as a loadable save. Workaround: load it locally
+> first, use Antistasi's in-game admin "Backup save" tool to convert it,
+> and import that.
+
+### Backups
+
+```bash
+# snapshot the current save (keeps the 10 most recent in saves/backups/)
+./scripts/backup-save.sh
+
+# restore an earlier snapshot
+./scripts/restore-save.sh saves/backups/2026-05-06-103015.vars.Arma3Profile
 docker compose restart arma3
 ```
 
-…or copy a new one in from the host with `docker cp`.
+For automated backups, drop a cron entry on the host:
+
+```cron
+*/30 * * * * cd /opt/arma3/arma3-antistasi-docker && ./scripts/backup-save.sh >>/var/log/arma3-backup.log 2>&1
+```
 
 ## Updating Antistasi
 
@@ -153,18 +216,6 @@ docker compose restart arma3
 # wipe everything and start over:
 docker compose down -v          # -v deletes the arma3-data volume
 ```
-
-## Becoming admin in-game
-
-In the in-game chat:
-
-```
-#login <passwordAdmin from server.cfg>
-#missions
-```
-
-The first command makes you admin; the second opens the mission selector so you
-can start an Antistasi mission.
 
 ## Troubleshooting
 

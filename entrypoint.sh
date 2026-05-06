@@ -14,6 +14,14 @@ ARMA_LIMITFPS="${ARMA_LIMITFPS:-1000}"
 ARMA_CONFIG="${ARMA_CONFIG:-server.cfg}"
 ARMA_PARAMS="${ARMA_PARAMS:-}"
 
+# server.cfg template variables — defaults make sense for a private game.
+export SERVER_HOSTNAME="${SERVER_HOSTNAME:-Antistasi Dedicated}"
+export SERVER_PASSWORD="${SERVER_PASSWORD:-}"
+export ADMIN_PASSWORD="${ADMIN_PASSWORD:-changeme}"
+export MAX_PLAYERS="${MAX_PLAYERS:-20}"
+export MISSION_TEMPLATE="${MISSION_TEMPLATE:-Antistasi_Altis.Altis}"
+export MISSION_DIFFICULTY="${MISSION_DIFFICULTY:-Regular}"
+
 SKIP_INSTALL="${SKIP_INSTALL:-false}"
 SKIP_MOD_INSTALL="${SKIP_MOD_INSTALL:-false}"
 # When true, run SteamCMD app_update on every start. When false (default),
@@ -39,11 +47,28 @@ if [ -z "${MOD_SOURCE:-}" ]; then
     fi
 fi
 
-mkdir -p "${ARMA_DIR}/configs" "${ARMA_DIR}/mods" "${ARMA_DIR}/keys"
+mkdir -p "${ARMA_DIR}/configs" "${ARMA_DIR}/configs/profiles/home/${ARMA_PROFILE}" \
+         "${ARMA_DIR}/mods" "${ARMA_DIR}/keys"
 
-# server.cfg: copy default once, never overwrite a user-edited file
-if [ ! -f "${ARMA_DIR}/configs/${ARMA_CONFIG}" ]; then
-    cp "/defaults/server.cfg" "${ARMA_DIR}/configs/${ARMA_CONFIG}"
+# server.cfg: render the template every boot so .env / compose env changes
+# (hostname, passwords, mission) are picked up on `docker compose restart`.
+echo "[entrypoint] Rendering ${ARMA_CONFIG} from template..."
+envsubst < "/defaults/server.cfg" > "${ARMA_DIR}/configs/${ARMA_CONFIG}"
+
+if [ "${ADMIN_PASSWORD}" = "changeme" ] || [ -z "${ADMIN_PASSWORD}" ]; then
+    echo "[entrypoint] WARNING: ADMIN_PASSWORD is unset or 'changeme' — anyone can claim admin. Set it in .env." >&2
+fi
+
+# Auto-import a savegame: anything dropped into /saves/import as
+# *.vars.Arma3Profile gets copied into the active profile slot if no save
+# is present yet. The newest file wins.
+SAVE_DEST="${ARMA_DIR}/configs/profiles/home/${ARMA_PROFILE}/${ARMA_PROFILE}.vars.Arma3Profile"
+if [ -d /saves/import ] && [ ! -s "${SAVE_DEST}" ]; then
+    import="$(ls -t /saves/import/*.vars.Arma3Profile 2>/dev/null | head -n1)"
+    if [ -n "${import}" ]; then
+        echo "[entrypoint] Importing savegame: ${import} -> ${SAVE_DEST}"
+        cp -f "${import}" "${SAVE_DEST}"
+    fi
 fi
 
 # ---- Build SteamCMD login args ----

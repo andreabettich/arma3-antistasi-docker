@@ -11,6 +11,13 @@ services:
       ARMA_LIMITFPS: "1000"
       ARMA_CONFIG: "server.cfg"
       ARMA_PARAMS: "-autoInit -loadMissionToMemory"
+      # ---- server.cfg template values (rendered on every boot) ----
+      SERVER_HOSTNAME: "${SERVER_HOSTNAME:-Antistasi Dedicated}"
+      SERVER_PASSWORD: "${SERVER_PASSWORD:-}"     # empty = public
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-changeme}"
+      MAX_PLAYERS: "${MAX_PLAYERS:-20}"
+      MISSION_TEMPLATE: "${MISSION_TEMPLATE:-Antistasi_Altis.Altis}"
+      MISSION_DIFFICULTY: "${MISSION_DIFFICULTY:-Regular}"
       # REQUIRED for the Arma 3 dedicated server install — anonymous SteamCMD
       # login is rejected by Steam ("No subscription"). Use an account that
       # owns Arma 3. Same credentials are also used for Steam Workshop mod
@@ -39,6 +46,13 @@ services:
       # Drop the extracted @Antistasi_The_Mod_*/ folder (or the .7z's contents)
       # into ./files on the host. Empty/missing => entrypoint falls back to GitHub.
       - ./files:/mod-src:ro
+      # Profile dir lives on the host so saves are easy to back up / replace.
+      # The current Antistasi save lands at:
+      #   ./profiles/home/${ARMA_PROFILE}/${ARMA_PROFILE}.vars.Arma3Profile
+      - ./profiles:/arma3/configs/profiles
+      # Optional: drop a .vars.Arma3Profile into ./saves/import to seed the
+      # server with an existing save on the next start (only if no save yet).
+      - ./saves:/saves
 
 volumes:
   arma3-data:
