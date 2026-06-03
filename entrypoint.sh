@@ -14,11 +14,11 @@ ARMA_CONFIG="${ARMA_CONFIG:-server.cfg}"
 ARMA_PARAMS="${ARMA_PARAMS:-}"
 
 # server.cfg template variables — defaults make sense for a private game.
-export SERVER_HOSTNAME="${SERVER_HOSTNAME:-Antistasi Dedicated}"
+export SERVER_HOSTNAME="${SERVER_HOSTNAME:-Antistasi Ultimate Dedicated}"
 export SERVER_PASSWORD="${SERVER_PASSWORD:-}"
 export ADMIN_PASSWORD="${ADMIN_PASSWORD:-changeme}"
 export MAX_PLAYERS="${MAX_PLAYERS:-20}"
-export MISSION_TEMPLATE="${MISSION_TEMPLATE:-Antistasi_Altis.Altis}"
+export MISSION_TEMPLATE="${MISSION_TEMPLATE:-A3U_Altis.Altis}"
 export MISSION_DIFFICULTY="${MISSION_DIFFICULTY:-Regular}"
 export BATTLEYE_ENABLE="${BATTLEYE_ENABLE:-1}"            # 0 = disable BE
 export VERIFY_SIGNATURES="${VERIFY_SIGNATURES:-2}"        # 0 = off, 2 = enforce
@@ -246,6 +246,17 @@ else
         # Validate name: must be lowercase alphanumerics + underscore/hyphen only.
         if ! [[ "${name}" =~ ^[a-z0-9_-]+$ ]]; then
             echo "[entrypoint] ERROR: invalid mod name '${name}' (allowed: a-z 0-9 _ -)" >&2
+            exit 1
+        fi
+
+        # Require source and spec on every row. tag is github-only; workshop
+        # and local rows can use "-" or leave it empty.
+        if [ -z "${source}" ] || [ -z "${spec}" ]; then
+            echo "[entrypoint] ERROR: ${name}: missing source or spec (format: name|source|spec|tag)" >&2
+            exit 1
+        fi
+        if [ "${source}" = "github" ] && [ -z "${tag}" ]; then
+            echo "[entrypoint] ERROR: ${name}: github source requires a tag (use 'latest' or a release tag)" >&2
             exit 1
         fi
 

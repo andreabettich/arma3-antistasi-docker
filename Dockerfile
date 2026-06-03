@@ -3,8 +3,7 @@ FROM --platform=linux/amd64 ubuntu:24.04
 ENV DEBIAN_FRONTEND=noninteractive \
     STEAM_HOME=/home/steam \
     ARMA_DIR=/arma3 \
-    ARMA_APPID=233780 \
-    ANTISTASI_RELEASE=latest
+    ARMA_APPID=233780
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 

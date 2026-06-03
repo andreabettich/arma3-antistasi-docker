@@ -12,11 +12,11 @@ services:
       ARMA_CONFIG: "server.cfg"
       ARMA_PARAMS: "-autoInit -loadMissionToMemory"
       # ---- server.cfg template values (rendered on every boot) ----
-      SERVER_HOSTNAME: "${SERVER_HOSTNAME:-Antistasi Dedicated}"
+      SERVER_HOSTNAME: "${SERVER_HOSTNAME:-Antistasi Ultimate Dedicated}"
       SERVER_PASSWORD: "${SERVER_PASSWORD:-}"     # empty = public
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-changeme}"
       MAX_PLAYERS: "${MAX_PLAYERS:-20}"
-      MISSION_TEMPLATE: "${MISSION_TEMPLATE:-Antistasi_Altis.Altis}"
+      MISSION_TEMPLATE: "${MISSION_TEMPLATE:-A3U_Altis.Altis}"
       MISSION_DIFFICULTY: "${MISSION_DIFFICULTY:-Regular}"
       # Diagnostic / security knobs — flip to relax checks while debugging:
       BATTLEYE_ENABLE: "${BATTLEYE_ENABLE:-1}"          # 0 = disable BE

@@ -94,6 +94,16 @@ Mod `.bikey` files are copied into `/arma3/keys/` so signature checking
 (`verifySignatures = 2`) works for every loaded mod. The entire mod tree is
 lowercased on Linux (Arma 3 is case-sensitive there).
 
+### Upgrading from the single-Antistasi build
+
+If you're upgrading from a previous version that installed only Antistasi
+into `mods/@antistasi`, that folder is still on the `arma3-data` volume but
+won't be loaded unless you add a row for it in `mods.conf`. To remove it:
+
+```bash
+docker compose exec arma3 rm -rf /arma3/mods/@antistasi
+```
+
 ## Configuration
 
 Set these in `.env` (preferred) or `docker-compose.yml`. The entrypoint
@@ -116,11 +126,11 @@ In-game, type `#login <ADMIN_PASSWORD>` in chat to claim admin, then
 
 | Var                  | Default                            | Notes |
 | -------------------- | ---------------------------------- | ----- |
-| `SERVER_HOSTNAME`    | `Antistasi Dedicated`              | Display name in the server browser. |
+| `SERVER_HOSTNAME`    | `Antistasi Ultimate Dedicated`     | Display name in the server browser. |
 | `SERVER_PASSWORD`    | _(empty)_                          | Join password. Empty = public. |
 | `ADMIN_PASSWORD`     | `changeme`                         | In-game `#login <pwd>` to gain admin. **Change this.** |
 | `MAX_PLAYERS`        | `20`                               | Player slot count. |
-| `MISSION_TEMPLATE`   | `Antistasi_Altis.Altis`            | Mission to load (e.g. `Antistasi_Tanoa.Tanoa`, `Antistasi_Enoch.Enoch`). |
+| `MISSION_TEMPLATE`   | `A3U_Altis.Altis`                  | Mission to load. Names vary per Antistasi flavor — verify with `#missions` in chat. |
 | `MISSION_DIFFICULTY` | `Regular`                          | `Recruit` / `Regular` / `Veteran` / `Custom`. |
 | `STEAM_USER`         | _(unset)_                          | **Required** Steam login (not SteamID) that owns Arma 3. |
 | `STEAM_PASSWORD`     | _(unset)_                          | **Required.** Password for `STEAM_USER`. |
