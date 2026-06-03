@@ -197,9 +197,20 @@ Edit `mods.conf` — change the tag, add a row, remove a row — then
 `docker compose restart arma3`. Only mods whose marker no longer matches
 the manifest are re-downloaded; everything else is left alone.
 
+Open `mods.conf` in your editor and change the `tag` column to pin a
+release. For example, to pin Antistasi Ultimate to `v11.9.9`, change:
+
+```
+antistasi_ultimate|github|Antistasi-Ultimate-Community/A3-Antistasi-Ultimate|latest
+```
+to:
+```
+antistasi_ultimate|github|Antistasi-Ultimate-Community/A3-Antistasi-Ultimate|v11.9.9
+```
+
+Then:
+
 ```bash
-# pin Antistasi Ultimate to a specific release
-sed -i 's|antistasi_ultimate|github|.*|antistasi_ultimate|github|Antistasi-Ultimate-Community/A3-Antistasi-Ultimate|v11.9.9|' mods.conf
 docker compose restart arma3
 
 # force a one-shot reinstall of every mod (no edits needed)
