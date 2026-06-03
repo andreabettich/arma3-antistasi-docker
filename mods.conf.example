@@ -1,0 +1,22 @@
+# Arma 3 mod manifest. Copy to `mods.conf` and edit. One mod per line.
+# Format: name|source|spec|tag
+#   name   = mod folder slug (becomes mods/@<name>, no spaces, lowercase)
+#   source = github | workshop | local
+#   spec   = github → "owner/repo"
+#            workshop → numeric workshop ID
+#            local → subdirectory name under /mod-src (i.e. ./files/<name>)
+#   tag    = github → release tag (e.g. "v11.9.9", "3.11.1") or "latest"
+#            workshop / local → ignored (use "-")
+#
+# Install order matters for some mods — dependencies first (CBA before ACE).
+# The same order is used for the `-mod=` launch flag.
+
+# Primary mission mod — pick ONE Antistasi.
+antistasi_ultimate|github|Antistasi-Ultimate-Community/A3-Antistasi-Ultimate|latest
+# antistasi_community|github|official-antistasi-community/A3-Antistasi|3.11.1
+
+# Support mods (uncomment what you want).
+# cba_a3|workshop|450814997|-
+# ace3|workshop|463939057|-
+# rhs_afrf|workshop|843425103|-
+# rhs_usaf|workshop|843577117|-
