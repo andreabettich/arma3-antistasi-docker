@@ -1,5 +1,6 @@
 .claude/
 .env
+mods.conf
 
 # Mod source tree — keep the dir for the bind mount, ignore its contents.
 files/*
