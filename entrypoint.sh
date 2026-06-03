@@ -4,7 +4,6 @@ set -euo pipefail
 ARMA_DIR="${ARMA_DIR:-/arma3}"
 STEAMCMD="${STEAMCMD:-steamcmd}"
 ARMA_APPID="${ARMA_APPID:-233780}"
-ANTISTASI_WORKSHOP_ID="${ANTISTASI_WORKSHOP_ID:-2867537125}"
 
 ARMA_BINARY="${ARMA_BINARY:-./arma3server_x64}"
 ARMA_PORT="${ARMA_PORT:-2302}"
@@ -30,24 +29,115 @@ SKIP_MOD_INSTALL="${SKIP_MOD_INSTALL:-false}"
 # skip it if the server binary is already present — avoids re-hitting Steam
 # on every restart and prevents login rate-limit lockouts.
 FORCE_UPDATE="${FORCE_UPDATE:-false}"
-# Antistasi release tag (e.g. "3.11.1") or "latest" — only used when fetching
-# from GitHub. Drives the marker file under mods/@antistasi/.installed-version
-# and triggers a re-download when changed.
-ANTISTASI_VERSION="${ANTISTASI_VERSION:-latest}"
-# When true, re-install the mod even if the marker matches.
+# When true, re-install every mod even if its marker matches.
 FORCE_MOD_UPDATE="${FORCE_MOD_UPDATE:-false}"
-# local | github | workshop  — auto-picks `local` when LOCAL_MOD_PATH has
-# something to copy, otherwise falls back to `github`. Workshop is opt-in.
-LOCAL_MOD_PATH="${LOCAL_MOD_PATH:-/mod-src}"
-if [ -z "${MOD_SOURCE:-}" ]; then
-    if [ -d "${LOCAL_MOD_PATH}" ] \
-       && find "${LOCAL_MOD_PATH}" -mindepth 1 -maxdepth 3 -type d -iname 'addons' \
-              -print -quit 2>/dev/null | grep -q .; then
-        MOD_SOURCE="local"
+
+# Path to the mod manifest. Default looks for /mods.conf inside the container
+# (bind-mounted from ./mods.conf on the host). See mods.conf.example.
+MODS_FILE="${MODS_FILE:-/mods.conf}"
+
+# Path under which `local` mods live (each one in a subdir). Bind-mount your
+# host's ./files there.
+MOD_SRC_DIR="${MOD_SRC_DIR:-/mod-src}"
+
+write_marker() {
+    # write_marker <name> <value>
+    echo "$2" > "${ARMA_DIR}/mods/@$1/.installed-version"
+}
+
+install_mod_github() {
+    # install_mod_github <name> <owner/repo> <tag>
+    local name="$1" repo="$2" tag="$3"
+    echo "[entrypoint] Installing ${name} from GitHub (${repo}@${tag})..."
+    local tmp api
+    tmp="$(mktemp -d)"
+    if [ "${tag}" = "latest" ]; then
+        api="https://api.github.com/repos/${repo}/releases/latest"
     else
-        MOD_SOURCE="github"
+        api="https://api.github.com/repos/${repo}/releases/tags/${tag}"
     fi
-fi
+    local urls asset_url
+    urls="$(curl -fsSL "${api}" \
+        | grep -Eo '"browser_download_url": *"[^"]+\.(7z|zip|rar)"' \
+        | sed -E 's/.*"(https[^"]+)".*/\1/')"
+    asset_url="$(echo "${urls}" | grep -E '\.7z$'  | head -n1 || true)"
+    [ -z "${asset_url}" ] && asset_url="$(echo "${urls}" | grep -E '\.zip$' | head -n1 || true)"
+    [ -z "${asset_url}" ] && asset_url="$(echo "${urls}" | head -n1 || true)"
+    if [ -z "${asset_url}" ]; then
+        echo "[entrypoint] ERROR: no release asset for ${repo}@${tag}" >&2
+        rm -rf "${tmp}"
+        return 1
+    fi
+    echo "[entrypoint] Asset: ${asset_url}"
+    local fname="${tmp}/mod.${asset_url##*.}"
+    curl -fsSL -o "${fname}" "${asset_url}"
+    local stage="${tmp}/stage"
+    mkdir -p "${stage}"
+    case "${fname##*.}" in
+        7z)  7z x -y -o"${stage}" "${fname}" ;;
+        rar) unrar-free -x "${fname}" "${stage}/" ;;
+        zip) unzip -q "${fname}" -d "${stage}/" ;;
+    esac
+    local addons_dir extracted
+    addons_dir="$(find "${stage}" -mindepth 1 -maxdepth 4 -type d -iname 'addons' | head -n1)"
+    if [ -z "${addons_dir}" ]; then
+        echo "[entrypoint] ERROR: no addons/ in ${repo}@${tag} archive. Contents:" >&2
+        find "${stage}" -maxdepth 3 -printf '  %p\n' >&2 || true
+        rm -rf "${tmp}"
+        return 1
+    fi
+    extracted="$(dirname "${addons_dir}")"
+    rm -rf "${ARMA_DIR}/mods/@${name}"
+    mv "${extracted}" "${ARMA_DIR}/mods/@${name}"
+    write_marker "${name}" "github:${repo}:${tag}"
+    rm -rf "${tmp}"
+}
+
+install_mod_workshop() {
+    # install_mod_workshop <name> <workshop_id>
+    local name="$1" wid="$2"
+    local src="${ARMA_DIR}/steamapps/workshop/content/107410/${wid}"
+    local attempt
+    for attempt in 1 2 3; do
+        echo "[entrypoint] Downloading ${name} via Workshop (id=${wid}, attempt ${attempt}/3)..."
+        "${STEAMCMD}" \
+            +force_install_dir "${ARMA_DIR}" \
+            "${STEAM_LOGIN[@]}" \
+            +workshop_download_item 107410 "${wid}" validate \
+            +quit || true
+        if [ -d "${src}" ] && [ -n "$(ls -A "${src}" 2>/dev/null)" ]; then
+            rm -rf "${ARMA_DIR}/mods/@${name}"
+            cp -r "${src}" "${ARMA_DIR}/mods/@${name}"
+            write_marker "${name}" "workshop:${wid}"
+            return 0
+        fi
+        echo "[entrypoint] Workshop attempt ${attempt} failed; retrying after 10s..." >&2
+        sleep 10
+    done
+    echo "[entrypoint] ERROR: Workshop download for ${wid} failed after 3 attempts." >&2
+    return 1
+}
+
+install_mod_local() {
+    # install_mod_local <name> <subdir>
+    local name="$1" subdir="$2"
+    local root="${MOD_SRC_DIR}/${subdir}"
+    echo "[entrypoint] Installing ${name} from local path: ${root}"
+    if [ ! -d "${root}" ]; then
+        echo "[entrypoint] ERROR: ${root} doesn't exist (drop the mod files there)." >&2
+        return 1
+    fi
+    local addons_dir src
+    addons_dir="$(find "${root}" -mindepth 1 -maxdepth 4 -type d -iname 'addons' | head -n1)"
+    if [ -z "${addons_dir}" ]; then
+        echo "[entrypoint] ERROR: no addons/ under ${root}." >&2
+        return 1
+    fi
+    src="$(dirname "${addons_dir}")"
+    rm -rf "${ARMA_DIR}/mods/@${name}"
+    cp -r "${src}" "${ARMA_DIR}/mods/@${name}"
+    write_marker "${name}" "local:${subdir}"
+}
 
 mkdir -p "${ARMA_DIR}/configs" "${ARMA_DIR}/configs/profiles/home/${ARMA_PROFILE}" \
          "${ARMA_DIR}/mods" "${ARMA_DIR}/keys"
@@ -116,170 +206,99 @@ else
     fi
 fi
 
-# ---- Install Antistasi mod ----
-# Strategy:
-#   1. If STEAM_USER + STEAM_PASSWORD set, use SteamCMD workshop_download_item (Workshop)
-#   2. Otherwise download the latest GitHub release archive
-install_antistasi_workshop() {
-    local src="${ARMA_DIR}/steamapps/workshop/content/107410/${ANTISTASI_WORKSHOP_ID}"
-    local attempt
-    for attempt in 1 2 3; do
-        echo "[entrypoint] Downloading Antistasi via Steam Workshop (id=${ANTISTASI_WORKSHOP_ID}, attempt ${attempt}/3)..."
-        "${STEAMCMD}" \
-            +force_install_dir "${ARMA_DIR}" \
-            "${STEAM_LOGIN[@]}" \
-            +workshop_download_item 107410 "${ANTISTASI_WORKSHOP_ID}" validate \
-            +quit || true
-        if [ -d "${src}" ] && [ -n "$(ls -A "${src}" 2>/dev/null)" ]; then
-            rm -rf "${ARMA_DIR}/mods/@antistasi"
-            cp -r "${src}" "${ARMA_DIR}/mods/@antistasi"
-            write_marker "workshop:${ANTISTASI_WORKSHOP_ID}"
-            return 0
-        fi
-        echo "[entrypoint] Workshop download attempt ${attempt} failed; retrying after 10s..." >&2
-        sleep 10
-    done
-    echo "[entrypoint] ERROR: Workshop download for ${ANTISTASI_WORKSHOP_ID} failed after 3 attempts." >&2
-    return 1
-}
+# ---- Install mods from manifest ----
+declare -a MOD_NAMES=()
 
-write_marker() {
-    echo "$1" > "${ARMA_DIR}/mods/@antistasi/.installed-version"
-}
+if [ "${SKIP_MOD_INSTALL}" = "true" ]; then
+    echo "[entrypoint] SKIP_MOD_INSTALL=true — using whatever's already on disk."
+elif [ ! -f "${MODS_FILE}" ]; then
+    echo "[entrypoint] WARNING: no manifest at ${MODS_FILE}; launching with no mods." >&2
+else
+    echo "[entrypoint] Reading manifest: ${MODS_FILE}"
+    while IFS='|' read -r name source spec tag || [ -n "${name}" ]; do
+        # trim whitespace
+        name="${name#"${name%%[![:space:]]*}"}"; name="${name%"${name##*[![:space:]]}"}"
+        source="${source#"${source%%[![:space:]]*}"}"; source="${source%"${source##*[![:space:]]}"}"
+        spec="${spec#"${spec%%[![:space:]]*}"}"; spec="${spec%"${spec##*[![:space:]]}"}"
+        tag="${tag#"${tag%%[![:space:]]*}"}"; tag="${tag%"${tag##*[![:space:]]}"}"
 
-install_antistasi_local() {
-    echo "[entrypoint] Installing Antistasi from local path: ${LOCAL_MOD_PATH}"
-    if [ ! -d "${LOCAL_MOD_PATH}" ]; then
-        echo "[entrypoint] ERROR: ${LOCAL_MOD_PATH} doesn't exist (mount your mod files there)." >&2
-        return 1
-    fi
-    local addons_dir src
-    addons_dir="$(find "${LOCAL_MOD_PATH}" -mindepth 1 -maxdepth 4 -type d -iname 'addons' | head -n1)"
-    if [ -z "${addons_dir}" ]; then
-        echo "[entrypoint] ERROR: no addons/ directory under ${LOCAL_MOD_PATH}." >&2
-        return 1
-    fi
-    src="$(dirname "${addons_dir}")"
-    echo "[entrypoint] Local mod root: ${src}"
-    rm -rf "${ARMA_DIR}/mods/@antistasi"
-    cp -r "${src}" "${ARMA_DIR}/mods/@antistasi"
-    write_marker "local"
-}
+        # skip blanks and comments
+        [ -z "${name}" ] && continue
+        case "${name}" in \#*) continue ;; esac
 
-install_antistasi_github() {
-    echo "[entrypoint] Downloading Antistasi from GitHub releases (version=${ANTISTASI_VERSION})..."
-    local tmp
-    tmp="$(mktemp -d)"
-    local api
-    if [ "${ANTISTASI_VERSION}" = "latest" ]; then
-        api="https://api.github.com/repos/official-antistasi-community/A3-Antistasi/releases/latest"
-    else
-        api="https://api.github.com/repos/official-antistasi-community/A3-Antistasi/releases/tags/${ANTISTASI_VERSION}"
-    fi
-    local urls asset_url
-    urls="$(curl -fsSL "${api}" \
-        | grep -Eo '"browser_download_url": *"[^"]+\.(7z|zip|rar)"' \
-        | sed -E 's/.*"(https[^"]+)".*/\1/')"
-    # Antistasi ships .7z (e.g. @Antistasi_The_Mod_3_11_1.7z); fall back to zip/rar
-    asset_url="$(echo "${urls}" | grep -E '\.7z$'  | head -n1 || true)"
-    [ -z "${asset_url}" ] && asset_url="$(echo "${urls}" | grep -E '\.zip$' | head -n1 || true)"
-    [ -z "${asset_url}" ] && asset_url="$(echo "${urls}" | head -n1 || true)"
-    if [ -z "${asset_url}" ]; then
-        echo "[entrypoint] ERROR: could not resolve Antistasi release asset URL" >&2
-        return 1
-    fi
-    echo "[entrypoint] Asset: ${asset_url}"
-    local fname="${tmp}/antistasi.${asset_url##*.}"
-    curl -fsSL -o "${fname}" "${asset_url}"
-    local stage="${tmp}/stage"
-    mkdir -p "${stage}"
-    case "${fname##*.}" in
-        7z)  7z x -y -o"${stage}" "${fname}" ;;
-        rar) unrar-free -x "${fname}" "${stage}/" ;;
-        zip) unzip -q "${fname}" -d "${stage}/" ;;
-    esac
-    # The mod root is whichever directory contains an `addons/` subdir.
-    # That's universal for Arma 3 mods. It works whether the archive has a
-    # top-level wrapper folder (e.g. @Antistasi_The_Mod_3_11_1/addons/) or
-    # ships everything at the archive root (addons/ + Keys/ + mod.cpp).
-    local addons_dir extracted
-    addons_dir="$(find "${stage}" -mindepth 1 -maxdepth 4 -type d -iname 'addons' | head -n1)"
-    if [ -z "${addons_dir}" ]; then
-        echo "[entrypoint] ERROR: no addons/ directory found in archive. Layout was:" >&2
-        find "${stage}" -maxdepth 3 -printf '  %p\n' >&2 || true
-        return 1
-    fi
-    extracted="$(dirname "${addons_dir}")"
-    echo "[entrypoint] Mod root: ${extracted}"
-    rm -rf "${ARMA_DIR}/mods/@antistasi"
-    mv "${extracted}" "${ARMA_DIR}/mods/@antistasi"
-    write_marker "${ANTISTASI_VERSION}"
-    rm -rf "${tmp}"
-}
+        MOD_NAMES+=("${name}")
 
-# Decide whether we need to (re)install the mod. The marker file is written
-# by every successful install path and tells us what's currently on disk.
-case "${MOD_SOURCE}" in
-    local)    requested_marker="local" ;;
-    workshop) requested_marker="workshop:${ANTISTASI_WORKSHOP_ID}" ;;
-    github)   requested_marker="${ANTISTASI_VERSION}" ;;
-    *)        requested_marker="${MOD_SOURCE}" ;;
-esac
-need_install=true
-if [ -d "${ARMA_DIR}/mods/@antistasi/addons" ] \
-   && [ -f "${ARMA_DIR}/mods/@antistasi/.installed-version" ] \
-   && [ "${FORCE_MOD_UPDATE}" != "true" ]; then
-    installed_marker="$(cat "${ARMA_DIR}/mods/@antistasi/.installed-version")"
-    if [ "${installed_marker}" = "${requested_marker}" ]; then
-        echo "[entrypoint] Mod already installed (${installed_marker}) — skipping download. Set FORCE_MOD_UPDATE=true to refresh."
-        need_install=false
-    else
-        echo "[entrypoint] Mod refresh: installed=${installed_marker}, requested=${requested_marker}"
-    fi
-fi
-
-if [ "${SKIP_MOD_INSTALL}" != "true" ] && [ "${need_install}" = "true" ]; then
-    echo "[entrypoint] MOD_SOURCE=${MOD_SOURCE}"
-    case "${MOD_SOURCE}" in
-        local)
-            install_antistasi_local
-            ;;
-        workshop)
-            if [ -z "${STEAM_USER:-}" ] || [ -z "${STEAM_PASSWORD:-}" ]; then
-                echo "[entrypoint] ERROR: MOD_SOURCE=workshop requires STEAM_USER and STEAM_PASSWORD." >&2
+        case "${source}" in
+            github)   requested_marker="github:${spec}:${tag}" ;;
+            workshop) requested_marker="workshop:${spec}" ;;
+            local)    requested_marker="local:${spec}" ;;
+            *)
+                echo "[entrypoint] ERROR: ${name}: unknown source '${source}' (github|workshop|local)" >&2
                 exit 1
+                ;;
+        esac
+
+        need_install=true
+        if [ -d "${ARMA_DIR}/mods/@${name}/addons" ] \
+           && [ -f "${ARMA_DIR}/mods/@${name}/.installed-version" ] \
+           && [ "${FORCE_MOD_UPDATE}" != "true" ]; then
+            installed_marker="$(cat "${ARMA_DIR}/mods/@${name}/.installed-version")"
+            if [ "${installed_marker}" = "${requested_marker}" ]; then
+                echo "[entrypoint] ${name}: already installed (${installed_marker}) — skipping."
+                need_install=false
+            else
+                echo "[entrypoint] ${name}: refresh (installed=${installed_marker}, requested=${requested_marker})"
             fi
-            install_antistasi_workshop
-            ;;
-        github)
-            install_antistasi_github
-            ;;
-        *)
-            echo "[entrypoint] ERROR: unknown MOD_SOURCE='${MOD_SOURCE}' (expected 'local', 'github', or 'workshop')." >&2
-            exit 1
-            ;;
-    esac
+        fi
+
+        if [ "${need_install}" = "true" ]; then
+            case "${source}" in
+                github)
+                    install_mod_github "${name}" "${spec}" "${tag}"
+                    ;;
+                workshop)
+                    if [ -z "${STEAM_USER:-}" ] || [ -z "${STEAM_PASSWORD:-}" ]; then
+                        echo "[entrypoint] ERROR: ${name}: workshop source requires STEAM_USER + STEAM_PASSWORD" >&2
+                        exit 1
+                    fi
+                    install_mod_workshop "${name}" "${spec}"
+                    ;;
+                local)
+                    install_mod_local "${name}" "${spec}"
+                    ;;
+            esac
+        fi
+    done < "${MODS_FILE}"
 fi
 
-# Lowercase the mod tree (Arma 3 on Linux is case-sensitive)
-if [ -d "${ARMA_DIR}/mods/@antistasi" ]; then
-    find "${ARMA_DIR}/mods/@antistasi" -depth -execdir bash -c '
+# Arma 3 on Linux is case-sensitive; lowercase every mod tree we installed,
+# and copy any .bikey files into the server keys dir.
+for name in "${MOD_NAMES[@]}"; do
+    [ -d "${ARMA_DIR}/mods/@${name}" ] || continue
+    find "${ARMA_DIR}/mods/@${name}" -depth -execdir bash -c '
         for f; do
             l="${f,,}"
             [ "$f" != "$l" ] && mv -- "$f" "$l" || true
         done
     ' _ {} +
-fi
-
-# Copy mod bikeys into the server keys dir (signature checking)
-if [ -d "${ARMA_DIR}/mods/@antistasi/keys" ]; then
-    cp -f "${ARMA_DIR}/mods/@antistasi/keys/"*.bikey "${ARMA_DIR}/keys/" 2>/dev/null || true
-fi
+    if [ -d "${ARMA_DIR}/mods/@${name}/keys" ]; then
+        cp -f "${ARMA_DIR}/mods/@${name}/keys/"*.bikey "${ARMA_DIR}/keys/" 2>/dev/null || true
+    fi
+done
 
 # ---- Build launch command ----
 MOD_PARAM=""
-if [ -d "${ARMA_DIR}/mods/@antistasi" ]; then
-    MOD_PARAM="-mod=mods/@antistasi"
+if [ "${#MOD_NAMES[@]}" -gt 0 ]; then
+    mod_paths=()
+    for name in "${MOD_NAMES[@]}"; do
+        [ -d "${ARMA_DIR}/mods/@${name}" ] && mod_paths+=("mods/@${name}")
+    done
+    if [ "${#mod_paths[@]}" -gt 0 ]; then
+        # Arma 3 separates mod entries with `;`
+        old_ifs="$IFS"; IFS=';'
+        MOD_PARAM="-mod=${mod_paths[*]}"
+        IFS="$old_ifs"
+    fi
 fi
 
 cd "${ARMA_DIR}"
