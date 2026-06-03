@@ -10,7 +10,7 @@ and runs on any Linux Docker host.
 | File                 | Purpose                                                                 |
 | -------------------- | ----------------------------------------------------------------------- |
 | `Dockerfile`         | `ubuntu:24.04` base + SteamCMD + 32-bit libs the Arma 3 server needs.   |
-| `entrypoint.sh`      | Installs/updates Arma 3, downloads Antistasi, launches `arma3server_x64`. |
+| `entrypoint.sh`      | Installs/updates Arma 3, installs the mods listed in `mods.conf`, launches `arma3server_x64`. |
 | `server.cfg`         | Server config with the Antistasi mission cycle (Altis preconfigured).   |
 | `docker-compose.yml` | Compose service exposing UDP ports 2302–2306 with a persistent volume.  |
 | `mods.conf.example`  | Mod manifest template — copy to `mods.conf` and edit. |
@@ -133,7 +133,7 @@ In-game, type `#login <ADMIN_PASSWORD>` in chat to claim admin, then
 | `ARMA_WORLD`         | `empty`                            | Map preloaded by the engine before any mission loads. `empty` is the standard for dedicated servers. |
 | `SKIP_INSTALL`       | `false`                            | Hard-skip SteamCMD entirely (no login attempt). |
 | `FORCE_UPDATE`       | `false`                            | Re-run `app_update` on every start even if the binary is already present. Default `false` so restarts don't re-hit Steam — repeated logins can trip Steam's per-account rate limiter. |
-| `SKIP_MOD_INSTALL`   | `false`                            | Set to `true` to keep the existing `mods/@antistasi`. |
+| `SKIP_MOD_INSTALL`   | `false`                            | Set to `true` to skip the manifest pass entirely (keep whatever's already on disk under `mods/`). |
 | `MODS_FILE`          | `/mods.conf`                       | Path inside the container to the mod manifest (bind-mounted from `./mods.conf`). |
 | `MOD_SRC_DIR`        | `/mod-src`                         | Container path where `local`-source mods are read from (bind-mounted from `./files`). |
 | `FORCE_MOD_UPDATE`   | `false`                            | One-shot: re-install every mod even if markers match. |
@@ -268,8 +268,9 @@ docker compose down -v          # -v deletes the arma3-data volume
 - **`arma3server_x64: not found`.** SteamCMD failed. Most often this is a
   network/firewall block on Steam's CDN. Re-run `docker compose up -d`.
 - **Mod signature mismatch.** Make sure clients are loading the *same*
-  Antistasi version as the server (Antistasi: only one Antistasi mod loaded at
-  a time, loaded as `-mod` not `-servermod`).
+  versions of every mod listed in `mods.conf` as the server. Antistasi
+  itself must be loaded as `-mod`, not `-servermod`, and only one Antistasi
+  flavor (Community OR Ultimate) at a time.
 - **BattlEye kicks everyone.** Set `battlEye = 0` in `server.cfg` while
   debugging, then re-enable.
 - **Steam returns `Rate Limit Exceeded`.** Stop the container immediately
@@ -278,10 +279,10 @@ docker compose down -v          # -v deletes the arma3-data volume
   server binary is installed, the entrypoint won't re-call SteamCMD on
   subsequent restarts (set `FORCE_UPDATE=true` only when you actually want to
   patch).
-- **Antistasi `.7z` extraction fails.** The image installs `p7zip-full` — if
-  you've stripped it, reinstall it. RAR5 fallback uses `unrar-free`, which
-  doesn't handle RAR5; in that case set `STEAM_USER` / `STEAM_PASSWORD` to
-  switch to Workshop.
+- **Mod archive extraction fails.** The image installs `p7zip-full` and
+  `unzip` — if you've stripped them, reinstall them. RAR5 fallback uses
+  `unrar-free`, which doesn't handle RAR5; in that case switch the affected
+  mod to `workshop` in `mods.conf` (requires `STEAM_USER` / `STEAM_PASSWORD`).
 
 ## References
 
