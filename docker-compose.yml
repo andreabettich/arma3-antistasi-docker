@@ -12,11 +12,11 @@ services:
       ARMA_CONFIG: "server.cfg"
       ARMA_PARAMS: "-autoInit -loadMissionToMemory"
       # ---- server.cfg template values (rendered on every boot) ----
-      SERVER_HOSTNAME: "${SERVER_HOSTNAME:-Antistasi Dedicated}"
+      SERVER_HOSTNAME: "${SERVER_HOSTNAME:-Antistasi Ultimate Dedicated}"
       SERVER_PASSWORD: "${SERVER_PASSWORD:-}"     # empty = public
       ADMIN_PASSWORD: "${ADMIN_PASSWORD:-changeme}"
       MAX_PLAYERS: "${MAX_PLAYERS:-20}"
-      MISSION_TEMPLATE: "${MISSION_TEMPLATE:-Antistasi_Altis.Altis}"
+      MISSION_TEMPLATE: "${MISSION_TEMPLATE:-A3U_Altis.Altis}"
       MISSION_DIFFICULTY: "${MISSION_DIFFICULTY:-Regular}"
       # Diagnostic / security knobs — flip to relax checks while debugging:
       BATTLEYE_ENABLE: "${BATTLEYE_ENABLE:-1}"          # 0 = disable BE
@@ -30,13 +30,7 @@ services:
       # Set to "true" after first install to skip SteamCMD update on every restart:
       SKIP_INSTALL: "false"
       SKIP_MOD_INSTALL: "false"
-      # local | github | workshop — leave unset to auto-pick: `local` if
-      # ./files contains an Antistasi mod folder, else `github`.
-      # MOD_SOURCE: "local"
-      # Antistasi release tag (e.g. "3.11.1") or "latest" (default).
-      # Change this and `docker compose restart arma3` to update or roll back.
-      ANTISTASI_VERSION: "${ANTISTASI_VERSION:-latest}"
-      # Force a one-shot mod re-install even if the installed marker matches:
+      # Force a one-shot re-install of every mod even if markers match:
       # FORCE_MOD_UPDATE: "true"
     ports:
       - "2302:2302/udp"
@@ -46,8 +40,10 @@ services:
       - "2306:2306/udp"
     volumes:
       - arma3-data:/arma3
-      # Drop the extracted @Antistasi_The_Mod_*/ folder (or the .7z's contents)
-      # into ./files on the host. Empty/missing => entrypoint falls back to GitHub.
+      # Mod manifest. See mods.conf.example.
+      - ./mods.conf:/mods.conf:ro
+      # Local mod sources. Drop each mod under ./files/<name>/ (matching the
+      # `local` rows in mods.conf, where <name> is the manifest's name field).
       - ./files:/mod-src:ro
       # Profile dir lives on the host so saves are easy to back up / replace.
       # The current Antistasi save lands at:
