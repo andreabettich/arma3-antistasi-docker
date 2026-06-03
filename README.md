@@ -1,8 +1,8 @@
 # Arma 3 Antistasi — Dockerized Dedicated Server
 
-Runs an Arma 3 dedicated server on Linux with the
-[Antistasi](https://github.com/official-antistasi-community/A3-Antistasi) mod
-preinstalled. Intended for an Ubuntu 24.04 host, but the image is self-contained
+Runs an Arma 3 dedicated server on Linux with the Antistasi mod family
+(Community or Ultimate) plus any support mods you list in `mods.conf`.
+Intended for an Ubuntu 24.04 host, but the image is self-contained
 and runs on any Linux Docker host.
 
 ## Layout
@@ -13,6 +13,7 @@ and runs on any Linux Docker host.
 | `entrypoint.sh`      | Installs/updates Arma 3, downloads Antistasi, launches `arma3server_x64`. |
 | `server.cfg`         | Server config with the Antistasi mission cycle (Altis preconfigured).   |
 | `docker-compose.yml` | Compose service exposing UDP ports 2302–2306 with a persistent volume.  |
+| `mods.conf.example`  | Mod manifest template — copy to `mods.conf` and edit. |
 
 ## Quickstart (Ubuntu 24.04 host)
 
@@ -23,6 +24,9 @@ sudo apt install docker.io docker-compose-v2
 cp .env.example .env
 # edit .env and fill in STEAM_USER / STEAM_PASSWORD (account that owns Arma 3)
 # and ADMIN_PASSWORD / SERVER_HOSTNAME / SERVER_PASSWORD as desired
+
+cp mods.conf.example mods.conf
+# edit mods.conf — pick which Antistasi flavor + which support mods
 
 # Bind-mount dirs need to be writable by UID 1000 (the steam user inside
 # the container). Skip this step if you'd rather use named volumes only.
@@ -52,28 +56,43 @@ that, restarts are fast.
 
 ## How mods are installed
 
-Antistasi is installed by the entrypoint on first boot. Three sources, in
-auto-detect order:
+The server boots from a `mods.conf` manifest — one mod per line, format
+`name|source|spec|tag`. Copy `mods.conf.example` to `mods.conf`, edit, then
+`docker compose up -d`. The entrypoint reads the manifest, installs each mod
+in order, and launches the server with `-mod=mods/@a;mods/@b;...`.
 
-1. **Local (recommended).** Drop the extracted `@Antistasi_The_Mod_*` folder
-   into `./files/` on the host (the dir is bind-mounted into the container at
-   `/mod-src`). Easy to update: replace the folder, `docker compose restart
-   arma3`. No network / no Steam dependency. Auto-picked when `./files` has a
-   directory containing `addons/`.
-2. **GitHub release.** Pulls the latest `.7z` (with `.zip` / `.rar`
-   fallbacks) from `official-antistasi-community/A3-Antistasi`. Used when
-   `./files` is empty.
-3. **Steam Workshop.** Opt in with `MOD_SOURCE=workshop` (also requires
-   `STEAM_USER` / `STEAM_PASSWORD`). Workshop is the least reliable path —
-   SteamCMD often fails large items with the generic
-   `Download item ... failed (Failure)` error — so it's not a default.
+### Sources
 
-Whatever the source, the resulting mod root is renamed to `@antistasi` so the
-`-mod=mods/@antistasi` launch param keeps working across version bumps.
+- **`github`** — pulls a release asset from `https://github.com/<spec>`.
+  `spec` is `owner/repo`; `tag` is the release tag (e.g. `v11.9.9`,
+  `3.11.1`) or `latest`. Handles `.7z`, `.zip`, and `.rar` archives, and
+  detects the mod root via its `addons/` directory regardless of whether the
+  archive has a wrapper folder.
+- **`workshop`** — downloads via SteamCMD. `spec` is the numeric workshop
+  ID; `tag` is ignored (use `-`). Requires `STEAM_USER` and `STEAM_PASSWORD`.
+  Less reliable than `github` for large items.
+- **`local`** — copies from `./files/<spec>/` on the host. `spec` is the
+  subdir name; `tag` is ignored (use `-`). Use this when you already have
+  the mod files (e.g. extracted Workshop downloads from a dev rig).
 
-The mod tree is lowercased after extraction (Arma 3 on Linux is
-case-sensitive). Mod `.bikey` files are copied into `/arma3/keys/` so signature
-checking (`verifySignatures = 2`) works.
+### Example manifest (Antistasi Ultimate + CBA + ACE)
+
+```
+antistasi_ultimate|github|Antistasi-Ultimate-Community/A3-Antistasi-Ultimate|latest
+cba_a3|workshop|450814997|-
+ace3|workshop|463939057|-
+```
+
+Install order matters — dependencies must come first (CBA before ACE).
+
+Per-mod state lives in `mods/@<name>/.installed-version`. When the requested
+spec doesn't match the marker, the entrypoint re-downloads on next boot.
+To force a re-install of every mod once: `FORCE_MOD_UPDATE=true docker
+compose up -d`.
+
+Mod `.bikey` files are copied into `/arma3/keys/` so signature checking
+(`verifySignatures = 2`) works for every loaded mod. The entire mod tree is
+lowercased on Linux (Arma 3 is case-sensitive there).
 
 ## Configuration
 
@@ -115,11 +134,9 @@ In-game, type `#login <ADMIN_PASSWORD>` in chat to claim admin, then
 | `SKIP_INSTALL`       | `false`                            | Hard-skip SteamCMD entirely (no login attempt). |
 | `FORCE_UPDATE`       | `false`                            | Re-run `app_update` on every start even if the binary is already present. Default `false` so restarts don't re-hit Steam — repeated logins can trip Steam's per-account rate limiter. |
 | `SKIP_MOD_INSTALL`   | `false`                            | Set to `true` to keep the existing `mods/@antistasi`. |
-| `MOD_SOURCE`         | _auto_                             | `local`, `github`, or `workshop`. Auto-picks `local` when `./files` has Antistasi, else `github`. |
-| `LOCAL_MOD_PATH`     | `/mod-src`                         | Path inside the container the local-mod source reads from. |
-| `ANTISTASI_VERSION`  | `latest`                           | GitHub release tag (e.g. `3.11.1`) or `latest`. |
-| `ANTISTASI_WORKSHOP_ID` | `2867537125`                    | Steam Workshop ID used when `MOD_SOURCE=workshop`. |
-| `FORCE_MOD_UPDATE`   | `false`                            | One-shot: re-install the mod even if the marker matches. |
+| `MODS_FILE`          | `/mods.conf`                       | Path inside the container to the mod manifest (bind-mounted from `./mods.conf`). |
+| `MOD_SRC_DIR`        | `/mod-src`                         | Container path where `local`-source mods are read from (bind-mounted from `./files`). |
+| `FORCE_MOD_UPDATE`   | `false`                            | One-shot: re-install every mod even if markers match. |
 | `BATTLEYE_ENABLE`    | `1`                                | `0` to disable BattlEye on the server. Useful for debugging client kicks. |
 | `VERIFY_SIGNATURES`  | `2`                                | `0` = off, `2` = enforce signed mods. Drop to `0` if `verifySignatures = 2` is rejecting clients while you investigate. |
 
@@ -174,31 +191,25 @@ For automated backups, drop a cron entry on the host:
 */30 * * * * cd /opt/arma3/arma3-antistasi-docker && ./scripts/backup-save.sh >>/var/log/arma3-backup.log 2>&1
 ```
 
-## Updating Antistasi
+## Updating mods
 
-The entrypoint records the installed version in
-`mods/@antistasi/.installed-version`. When the requested version doesn't
-match the marker, the mod is re-downloaded on next start.
+Edit `mods.conf` — change the tag, add a row, remove a row — then
+`docker compose restart arma3`. Only mods whose marker no longer matches
+the manifest are re-downloaded; everything else is left alone.
 
 ```bash
-# pin to a specific release
-echo 'ANTISTASI_VERSION=3.11.1' >> .env
+# pin Antistasi Ultimate to a specific release
+sed -i 's|antistasi_ultimate|github|.*|antistasi_ultimate|github|Antistasi-Ultimate-Community/A3-Antistasi-Ultimate|v11.9.9|' mods.conf
 docker compose restart arma3
 
-# always track the latest GitHub release
-echo 'ANTISTASI_VERSION=latest' >> .env
-docker compose restart arma3
-
-# one-shot forced re-install (no version bump):
+# force a one-shot reinstall of every mod (no edits needed)
 FORCE_MOD_UPDATE=true docker compose up -d
 ```
 
 Marker values per source:
-
-- `github`: the release tag, or `latest`.
-- `local`: literal `local` (drop in new files and set `FORCE_MOD_UPDATE=true`
-  once to refresh).
-- `workshop`: `workshop:<id>`.
+- `github`: `github:<owner/repo>:<tag>`
+- `workshop`: `workshop:<id>`
+- `local`: `local:<subdir>`
 
 ## Ports
 
@@ -243,9 +254,8 @@ docker compose exec arma3 tail -f /arma3/configs/profiles/server.log
 docker compose down
 docker compose up -d            # entrypoint runs SteamCMD validate
 
-# force-reinstall Antistasi (next boot):
-docker compose exec arma3 rm -rf /arma3/mods/@antistasi
-docker compose restart arma3
+# force-reinstall every mod (next boot):
+FORCE_MOD_UPDATE=true docker compose up -d
 
 # wipe everything and start over:
 docker compose down -v          # -v deletes the arma3-data volume
