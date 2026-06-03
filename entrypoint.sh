@@ -51,46 +51,63 @@ install_mod_github() {
     echo "[entrypoint] Installing ${name} from GitHub (${repo}@${tag})..."
     local tmp api
     tmp="$(mktemp -d)"
+    # Ensure tmp dir is cleaned up on any function exit (success, return, set -e abort).
+    trap 'rm -rf "${tmp}"' RETURN
     if [ "${tag}" = "latest" ]; then
         api="https://api.github.com/repos/${repo}/releases/latest"
     else
         api="https://api.github.com/repos/${repo}/releases/tags/${tag}"
     fi
     local urls asset_url
-    urls="$(curl -fsSL "${api}" \
+    if ! urls="$(curl -fsSL "${api}" \
         | grep -Eo '"browser_download_url": *"[^"]+\.(7z|zip|rar)"' \
-        | sed -E 's/.*"(https[^"]+)".*/\1/')"
+        | sed -E 's/.*"(https[^"]+)".*/\1/')"; then
+        echo "[entrypoint] ERROR: failed to fetch release metadata from ${api}" >&2
+        return 1
+    fi
     asset_url="$(echo "${urls}" | grep -E '\.7z$'  | head -n1 || true)"
     [ -z "${asset_url}" ] && asset_url="$(echo "${urls}" | grep -E '\.zip$' | head -n1 || true)"
     [ -z "${asset_url}" ] && asset_url="$(echo "${urls}" | head -n1 || true)"
     if [ -z "${asset_url}" ]; then
         echo "[entrypoint] ERROR: no release asset for ${repo}@${tag}" >&2
-        rm -rf "${tmp}"
         return 1
     fi
     echo "[entrypoint] Asset: ${asset_url}"
     local fname="${tmp}/mod.${asset_url##*.}"
-    curl -fsSL -o "${fname}" "${asset_url}"
+    if ! curl -fsSL -o "${fname}" "${asset_url}"; then
+        echo "[entrypoint] ERROR: failed to download asset ${asset_url}" >&2
+        return 1
+    fi
     local stage="${tmp}/stage"
     mkdir -p "${stage}"
     case "${fname##*.}" in
-        7z)  7z x -y -o"${stage}" "${fname}" ;;
-        rar) unrar-free -x "${fname}" "${stage}/" ;;
-        zip) unzip -q "${fname}" -d "${stage}/" ;;
+        7z)
+            if ! 7z x -y -o"${stage}" "${fname}"; then
+                echo "[entrypoint] ERROR: 7z extract failed for ${fname}" >&2
+                return 1
+            fi ;;
+        rar)
+            if ! unrar-free -x "${fname}" "${stage}/"; then
+                echo "[entrypoint] ERROR: unrar-free extract failed for ${fname}" >&2
+                return 1
+            fi ;;
+        zip)
+            if ! unzip -q "${fname}" -d "${stage}/"; then
+                echo "[entrypoint] ERROR: unzip extract failed for ${fname}" >&2
+                return 1
+            fi ;;
     esac
     local addons_dir extracted
     addons_dir="$(find "${stage}" -mindepth 1 -maxdepth 4 -type d -iname 'addons' | head -n1)"
     if [ -z "${addons_dir}" ]; then
         echo "[entrypoint] ERROR: no addons/ in ${repo}@${tag} archive. Contents:" >&2
         find "${stage}" -maxdepth 3 -printf '  %p\n' >&2 || true
-        rm -rf "${tmp}"
         return 1
     fi
     extracted="$(dirname "${addons_dir}")"
     rm -rf "${ARMA_DIR}/mods/@${name}"
     mv "${extracted}" "${ARMA_DIR}/mods/@${name}"
     write_marker "${name}" "github:${repo}:${tag}"
-    rm -rf "${tmp}"
 }
 
 install_mod_workshop() {
@@ -225,6 +242,12 @@ else
         # skip blanks and comments
         [ -z "${name}" ] && continue
         case "${name}" in \#*) continue ;; esac
+
+        # Validate name: must be lowercase alphanumerics + underscore/hyphen only.
+        if ! [[ "${name}" =~ ^[a-z0-9_-]+$ ]]; then
+            echo "[entrypoint] ERROR: invalid mod name '${name}' (allowed: a-z 0-9 _ -)" >&2
+            exit 1
+        fi
 
         MOD_NAMES+=("${name}")
 
